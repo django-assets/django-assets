@@ -40,10 +40,12 @@ class AccountProfile(models.Model):
     )
 
     subtype = models.CharField(max_length=40, blank=True, db_index=True)
-    # Recommended values: "brokerage", "cash_account", "margin", "ira", "roth_ira",
-    # "sep_ira", "simple_ira", "401k", "roth_401k", "403b", "hsa", "529",
+    # Recommended values: "brokerage", "cash_account", "margin",
+    # "traditional_ira", "roth_ira", "sep_ira", "simple_ira",
+    # "401k", "roth_401k", "403b", "hsa", "529",
     # "bank_checking", "bank_savings", "crypto_wallet", "crypto_exchange",
     # "custodial", "trust". Hosts may add their own.
+    # Shares vocabulary with tax_treatment for tax-advantaged subtypes.
 
     allows_short = models.BooleanField(default=False)
     # If True, non-currency holdings may go negative (short positions).
@@ -63,8 +65,11 @@ class AccountProfile(models.Model):
 
     tax_treatment = models.CharField(max_length=40, blank=True)
     # Specific tax treatment when is_tax_advantaged=True. Recommended values:
-    # "traditional_ira", "roth_ira", "sep_ira", "401k", "403b", "hsa", "529",
+    # "traditional_ira", "roth_ira", "sep_ira", "simple_ira",
+    # "401k", "roth_401k", "403b", "hsa", "529",
     # "uniform_transfer_to_minors", "trust".
+    # Shares vocabulary with subtype for tax-advantaged subtypes — the same
+    # token (e.g. "roth_ira") may appear in both fields when both apply.
 
     metadata = models.JSONField(default=dict, blank=True)
 ```
@@ -135,7 +140,7 @@ The schema is designed to be extensible without breaking changes within a major 
 | `brokerage` | General taxable brokerage account |
 | `cash_account` | Brokerage with cash settlement only (no margin) |
 | `margin` | Brokerage with margin enabled |
-| `ira` | Traditional IRA |
+| `traditional_ira` | Traditional IRA |
 | `roth_ira` | Roth IRA |
 | `sep_ira` | SEP IRA |
 | `simple_ira` | SIMPLE IRA |

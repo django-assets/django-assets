@@ -55,6 +55,10 @@ class ImportSchema:
     Subclasses are decorated with @register_schema(...) and must implement:
       - `parse_batch(batch, source)`: bytes/stream → ImportLine instances
       - `materialize_line(line)`: ImportLine → ledger Transactions
+      - `match_criteria(line)`: ImportLine → MatchCriteria, used by the
+        orchestrator's dedup pass to find pre-existing manual entries
+        (per ADR-0028). Pure-informational schemas may raise or return
+        a sentinel; they are skipped by dedup either way.
 
     The class also carries a `definition` dict describing the row structure
     so consumers can interpret ImportLine.raw_data without calling Python.
@@ -97,6 +101,21 @@ class ImportSchema:
         line.matched_legs (per ADR-0024/0025).
 
         Required override. Pure-informational schemas implement as `return []`.
+        """
+        raise NotImplementedError
+
+    def match_criteria(self, line) -> "MatchCriteria":
+        """Extract the fields used to find a matching pre-existing manual leg.
+
+        Returns a MatchCriteria (date, instrument, amount, date_window_days)
+        per ADR-0028 that the orchestrator's find_matching_legs() uses to
+        scope the dedup search. Schemas override for broker-specific quirks
+        (settlement-date offsets, amount unit conversion, longer match
+        windows for slow-reporting brokers).
+
+        Required for transactional schemas. Pure-informational schemas may
+        leave this unimplemented — the orchestrator skips dedup for lines
+        whose kind isn't matchable (per ADR-0025's broker_ prefix rule).
         """
         raise NotImplementedError
 ```
@@ -446,10 +465,10 @@ The natural key is `(broker, format_kind, version)` only.
 
 ## Impact on other ADRs
 
-- **ADR-0019** (Bulk import primitives) — `ImportBatch` gains four schema-key CharFields. The high-level ADR is not invalidated; this is a refinement.
+- **ADR-0019** (Bulk import primitives) — `ImportBatch` gains four schema-key CharFields (`schema_broker`, `schema_document_kind`, `schema_format_kind`, `schema_version`) and loses the original free-form `source` CharField, which is fully subsumed by the schema-key tuple. Dedup helpers (`is_period_imported`, `find_by_external_ids`) now key off `(schema_broker, schema_document_kind)` instead of `source`. High-level ADR is not invalidated; this is a refinement.
 - **ADR-0021** (Brokerage templates follow source's transaction shape) — needs a small clarification noting that `ImportSchema.materialize_line` is the import-path caller of brokerage templates. Templates themselves are unchanged; the addition is documentation of who their callers are.
-- **ADR-0025** (Broker download lines) — needs a small amendment. The "verbatim JSON in `raw_data`" wording must be clarified to "structured per the batch's registered `ImportSchema.definition`" — positional list for tabular shapes, dict for nested shapes. The intent (canonical evidence, no denormalized columns) is preserved.
-- **ADR-0028** (Transaction provenance) — settles the `Transaction.origin` marker that the import orchestrator uses to find pre-existing manual entries during dedup, and adds a third required schema method (`match_criteria`). The schema API in this ADR is forward-compatible with that addition.
+- **ADR-0025** (Broker download lines) — `raw_data` storage clarified to "structured per the batch's registered `ImportSchema.definition`" (positional list for tabular shapes, dict for nested shapes). The intent (canonical evidence, no denormalized columns) is preserved. Applied 2026-06-09.
+- **ADR-0028** (Transaction provenance) — settles the `Transaction.origin` marker that the import orchestrator uses to find pre-existing manual entries during dedup, and adds a third required schema method (`match_criteria`), which the base class declared above includes.
 
 ## Related
 

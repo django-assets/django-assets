@@ -20,12 +20,12 @@ Two design decisions sit on top of these concerns:
 
 Four dedup patterns emerged as the realistic ones for retail and institutional source data:
 
-- **Period-discipline** — imports are restricted to whole time periods (whole days, whole months, etc.). The host tracks what periods have been imported per (account, source). Re-imports of a covered period are detected by date arithmetic alone. Works for any source that publishes whole-period statements, including those with no stable IDs.
+- **Period-discipline** — imports are restricted to whole time periods (whole days, whole months, etc.). The host tracks what periods have been imported per `(account, schema_broker, schema_document_kind)`. Re-imports of a covered period are detected by date arithmetic alone. Works for any source that publishes whole-period statements, including those with no stable IDs.
 - **Period-replacement** — when a known-bad period needs re-importing, the host deletes the range and re-imports. The deferred balance trigger correctly handles whole-transaction DELETE (per ADR-0006), so range deletion is safe.
 - **Metadata-key idempotency** — for sources that publish stable IDs (Interactive Brokers Flex Query, modern broker APIs), filter source rows against existing TransactionImport rows by external_id before bulk_import.
 - **File-level dedup** — hash the source file and refuse to re-import the same file. Useful as a coarse safety net regardless of which finer-grained pattern is used.
 
-The package supports all four by providing models and helpers; the host picks per (account, source).
+The package supports all four by providing models and helpers; the host picks per `(account, schema_broker, schema_document_kind)`.
 
 ## Decision
 
@@ -104,9 +104,12 @@ class ImportBatch(models.Model):
     account = models.ForeignKey(
         "django_assets.Account", on_delete=models.CASCADE, related_name="import_batches",
     )
-    source = models.CharField(max_length=100, db_index=True)
-    # Convention: "schwab_csv", "fidelity_qfx", "ib_flex", "manual", etc.
-    # Free-form; host owns the vocabulary.
+    # Schema-key tuple per ADR-0027 (registered ImportSchema).
+    # Together these resolve which Python class parsed this batch.
+    schema_broker = models.CharField(max_length=40, db_index=True)        # "schwab", "fidelity", "ib", ...
+    schema_document_kind = models.CharField(max_length=40, db_index=True) # "trades", "dividends", "balances", ...
+    schema_format_kind = models.CharField(max_length=20)                  # "csv", "qfx", "ofx", "flex", "json"
+    schema_version = models.CharField(max_length=20)                      # broker-defined version tag, e.g. "2026.01"
 
     period_start = models.DateTimeField(null=True, blank=True, db_index=True)
     period_end = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -155,11 +158,19 @@ class TransactionImport(models.Model):
 
 ```python
 # Period-discipline pattern
-def is_period_imported(account, source, period_start, period_end) -> bool:
-    """True if an ImportBatch fully covers [period_start, period_end] for (account, source)."""
+def is_period_imported(
+    account, schema_broker, schema_document_kind, period_start, period_end,
+) -> bool:
+    """True if an ImportBatch fully covers [period_start, period_end]
+    for (account, schema_broker, schema_document_kind). Format and version
+    are intentionally NOT part of the dedup scope: a Schwab trades CSV v1
+    and a Schwab trades CSV v2 cover the same trade-period concept."""
 
-def get_imported_periods(account, source=None) -> list[tuple[datetime, datetime]]:
-    """All imported period ranges; useful for 'what's been covered?' queries."""
+def get_imported_periods(
+    account, schema_broker=None, schema_document_kind=None,
+) -> list[tuple[datetime, datetime]]:
+    """All imported period ranges; useful for 'what's been covered?' queries.
+    Either or both schema_* filters may be omitted for broader queries."""
 
 # Period-replacement pattern
 def delete_import_batch(batch: ImportBatch) -> int:
@@ -169,10 +180,11 @@ def delete_import_batch(batch: ImportBatch) -> int:
 
 # Metadata-key pattern
 def find_by_external_ids(
-    account, source, external_ids: Iterable[str],
+    account, schema_broker, schema_document_kind, external_ids: Iterable[str],
 ) -> set[str]:
     """Returns the subset of external_ids that already have TransactionImport rows
-    for (account, source). Caller filters their input rows by this set before importing."""
+    for (account, schema_broker, schema_document_kind). Caller filters their input
+    rows by this set before importing."""
 
 # File-level pattern
 def is_file_imported(account, file_hash) -> Optional[ImportBatch]:
@@ -201,7 +213,7 @@ Manual user-entry flows (a host's UI that lets users record a single transaction
 
 ### Dedup policy is per-import, not per-account
 
-There is no `Account.default_import_dedup_policy` column. Different sources for the same account use different strategies (Schwab CSV uses period-discipline; IB Flex uses metadata-key). The strategy is selected by the host's import code at import time based on the source.
+There is no `Account.default_import_dedup_policy` column. Different schemas for the same account use different strategies (Schwab CSV uses period-discipline; IB Flex uses metadata-key). The strategy is selected by the host's import code at import time based on the registered `ImportSchema`.
 
 If a host wants to record their preferences, that's `Account.metadata` JSON or a separate host-side model. Not in the package's schema.
 
@@ -218,13 +230,16 @@ period_start, period_end = parse_schwab_period(file_bytes)
 parsed_rows = parse_schwab_rows(file_bytes)
 
 # Period-discipline
-if is_period_imported(account, "schwab_csv", period_start, period_end):
+if is_period_imported(account, "schwab", "trades", period_start, period_end):
     # Host decides: skip, replace, or surface to user
     return {"status": "period_already_imported"}
 
 batch = ImportBatch.objects.create(
     account=account,
-    source="schwab_csv",
+    schema_broker="schwab",
+    schema_document_kind="trades",
+    schema_format_kind="csv",
+    schema_version="2026.01",
     period_start=period_start,
     period_end=period_end,
     file_name=file.name,
@@ -240,10 +255,17 @@ batch.save()
 ### Worked example: IB Flex import (stable IDs)
 
 ```python
-batch = ImportBatch.objects.create(account=account, source="ib_flex", file_hash=file_hash)
+batch = ImportBatch.objects.create(
+    account=account,
+    schema_broker="ib",
+    schema_document_kind="flex_query",
+    schema_format_kind="xml",
+    schema_version="3",
+    file_hash=file_hash,
+)
 
 ib_ids = [r["metadata"]["ib_execution_id"] for r in parsed_rows]
-existing = find_by_external_ids(account, "ib_flex", ib_ids)
+existing = find_by_external_ids(account, "ib", "flex_query", ib_ids)
 
 new_rows = []
 for r in parsed_rows:
@@ -261,7 +283,9 @@ import_transactions(new_rows, batch=batch)
 # (Host UI confirms with the user; calls this only after explicit confirmation)
 
 old_batches = ImportBatch.objects.filter(
-    account=account, source="schwab_csv",
+    account=account,
+    schema_broker="schwab",
+    schema_document_kind="trades",
     period_start__lte=date(2024, 3, 1), period_end__gte=date(2024, 3, 31),
 )
 for batch in old_batches:

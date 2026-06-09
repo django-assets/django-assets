@@ -61,9 +61,9 @@ class ImportLine(models.Model):
 
 The remaining sub-questions resolve as follows.
 
-### Raw row storage: verbatim JSON only
+### Raw row storage: structured per the batch's `ImportSchema`
 
-`raw_data` holds the row exactly as the broker provided it. No pre-parsed denormalized columns. The raw row is the canonical evidence, and anything the importer extracted (instrument, date, amount, direction) lives on the resulting `Transaction` / `TransactionLeg` — which the M2M reaches whenever the line is matched. Unmatched-line queries that need to filter by instrument or date use JSONB path lookups against `raw_data`. If that becomes a performance issue, denorm columns can be added later via migration.
+`raw_data` holds the row in the shape declared by the batch's registered `ImportSchema.definition` (per ADR-0027) — a positional list for tabular sources (CSV, fixed-width), a dict for nested sources (QFX/OFX trees, JSON feeds). No pre-parsed denormalized columns. The raw row is the canonical evidence, and anything the importer extracted (instrument, date, amount, direction) lives on the resulting `Transaction` / `TransactionLeg` — which the M2M reaches whenever the line is matched. Unmatched-line queries that need to filter by instrument or date use JSONB path lookups against `raw_data`. If that becomes a performance issue, denorm columns can be added later via migration.
 
 ### Informational rows: stored, not filtered
 
