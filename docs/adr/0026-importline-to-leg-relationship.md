@@ -24,8 +24,8 @@ Adopt **A1**: an auto-generated M2M between `ImportLine` and `TransactionLeg`, w
 
 ```python
 class ImportLine(models.Model):
-    batch = models.ForeignKey(ImportBatch, ..., null=True, blank=True)
-    line_number = models.PositiveIntegerField(null=True, blank=True)
+    batch = models.ForeignKey(ImportBatch, related_name="lines", on_delete=models.CASCADE)
+    line_number = models.PositiveIntegerField()
     raw_data = models.JSONField(default=dict, blank=True)
     kind = models.CharField(max_length=40)
     source_reference = models.CharField(max_length=200, blank=True)
@@ -36,9 +36,17 @@ class ImportLine(models.Model):
         blank=True,
     )
     metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["batch", "line_number"],
+                name="uniq_importline_batch_linenumber",
+            ),
+        ]
 ```
 
-Django auto-creates the join table; no `ImportLineMatch` model in Python. The relationship is **binary**: either an `ImportLine` is in the join for a given `TransactionLeg`, or it isn't. No per-match `role`, no `matched_at`, no `note` on individual matches.
+`batch` and `line_number` are both non-null: per ADR-0024 (no user-attestation path) and ADR-0025, every `ImportLine` corresponds to a real row in a real import. The `(batch, line_number)` unique constraint is the natural key. Django auto-creates the M2M join table; no `ImportLineMatch` model in Python. The relationship is **binary**: either an `ImportLine` is in the join for a given `TransactionLeg`, or it isn't. No per-match `role`, no `matched_at`, no `note` on individual matches.
 
 ### Rationale
 
@@ -93,8 +101,8 @@ If any of these become genuinely necessary later, a migration from auto-generate
 
 ```python
 class ImportLine(models.Model):
-    batch = models.ForeignKey(ImportBatch, ..., null=True, blank=True)
-    line_number = models.PositiveIntegerField(null=True, blank=True)
+    batch = models.ForeignKey(ImportBatch, related_name="lines", on_delete=models.CASCADE)
+    line_number = models.PositiveIntegerField()
     raw_data = models.JSONField(default=dict, blank=True)
     kind = models.CharField(max_length=40)
     source_reference = models.CharField(max_length=200, blank=True)
@@ -154,8 +162,8 @@ For the AAPL buy example: one `ImportLine` row + two `ImportLineMatch` rows (one
 
 ```python
 class ImportLine(models.Model):
-    batch = models.ForeignKey(ImportBatch, ..., null=True, blank=True)
-    line_number = models.PositiveIntegerField(null=True, blank=True)
+    batch = models.ForeignKey(ImportBatch, related_name="lines", on_delete=models.CASCADE)
+    line_number = models.PositiveIntegerField()
     raw_data = models.JSONField(default=dict, blank=True)
     kind = models.CharField(max_length=40)
     source_reference = models.CharField(max_length=200, blank=True)

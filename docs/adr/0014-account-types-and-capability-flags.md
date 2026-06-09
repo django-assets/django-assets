@@ -4,6 +4,8 @@
 
 Accepted — 2026-06-03
 
+Amended 2026-06-09 to add `allows_reconciliation` (see ADR-0024, ADR-0027, ADR-0028 for usage).
+
 ## Context
 
 Real-world accounts carry functional and regulatory type information. A retail user might have a brokerage account, a cash account, a margin account, a Traditional IRA, a Roth IRA, a 401k, an HSA, a checking account, and a crypto wallet — all separate Accounts, all owned by the same User. These distinctions affect:
@@ -52,6 +54,13 @@ class AccountProfile(models.Model):
     is_tax_advantaged = models.BooleanField(default=False, db_index=True)
     # Informational; affects reporting in trades/lots apps.
 
+    allows_reconciliation = models.BooleanField(default=False, db_index=True)
+    # If True, legs touching this account may be reconciled against broker
+    # import lines (ADR-0024). Set during account setup for brokerage cash,
+    # brokerage holdings, bank, and crypto-exchange accounts whose balances
+    # are authoritatively reported by an external statement / feed / CSV.
+    # Default False: a plain Account is just a bucket; reconciliation is opt-in.
+
     tax_treatment = models.CharField(max_length=40, blank=True)
     # Specific tax treatment when is_tax_advantaged=True. Recommended values:
     # "traditional_ira", "roth_ira", "sep_ira", "401k", "403b", "hsa", "529",
@@ -71,6 +80,20 @@ class Account(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     metadata = models.JSONField(default=dict, blank=True)
 ```
+
+### `allows_reconciliation` gates the reconciliation linkage
+
+This flag is the answer to "is this account broker-reported?" — the load-bearing question that ADR-0024 left open. It is set at account setup and determines whether legs touching the account can be added to `ImportLine.matched_legs` (per ADR-0026), and therefore whether they can become reconciled-and-locked under ADR-0024's signal handlers.
+
+The flag is checked in three places:
+
+- **The import orchestrator** (ADR-0027): when materializing an import line, only legs whose `account.brokerage_profile.allows_reconciliation` is True get added to `ImportLine.matched_legs`. Commission, fee, and counterparty legs in the same Transaction stay unreconciled.
+- **Dedup match candidates** (ADR-0028): the search for a pre-existing manual Transaction to dedup against only considers legs on accounts with `allows_reconciliation=True`.
+- **The end-of-batch invariant check** (ADR-0028): asserts that no import-origin Transaction has an `allows_reconciliation` leg outside `matched_legs`.
+
+The flag may be toggled OFF as long as no `ImportLine.matched_legs` entry currently references a leg on this account. Once any reconciliation linkage exists, the host must first remove those linkages (the normal unflip workflow per ADR-0024) before the flag can be cleared. Brokerage's `AppConfig.ready()` wires a `pre_save` handler on `AccountProfile` that enforces this — unsetting `allows_reconciliation` while reconciled legs exist raises rather than silently un-locking those legs.
+
+Unlike the `allows_short` / `allows_margin` capability flags (whose enforcement is the host's job, see below), `allows_reconciliation` is enforced by brokerage itself because it is wired into the reconciliation invariants. Hosts that install only core get a field with no enforcement and no consumers — harmless, but meaningless.
 
 ### Enforcement is the host's job
 
@@ -159,4 +182,7 @@ The schema is designed to be extensible without breaking changes within a major 
 - ADR-0005 establishes single-owner accounts.
 - ADR-0006 establishes CASCADE on user delete.
 - ADR-0015 (single PyPI distribution) — `AccountProfile` ships in brokerage, alongside other opinionated extensions.
+- ADR-0024 (Reconciliation scope) — consumes `allows_reconciliation` to determine which legs are eligible for the reconciliation lock.
+- ADR-0027 (Import schema registration) — the orchestrator filters `matched_legs` candidates by `allows_reconciliation`.
+- ADR-0028 (Transaction provenance) — the dedup query filters candidates by `allows_reconciliation` on the matched-leg's account.
 - OQ-6 in `open-questions.md` is resolved by this ADR.

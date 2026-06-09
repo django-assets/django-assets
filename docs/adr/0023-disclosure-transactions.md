@@ -50,7 +50,7 @@ This ADR must operate within the following established decisions:
 
 ### What does "reconciled" mean? (load-bearing)
 
-**Resolved by ADR-0024: leg-level reconciliation, asset-account legs only, leg-level FK to source.** Only legs with a non-null `reconciled_by` FK are immutable; all other legs of the same Transaction are freely editable.
+**Resolved by ADR-0024: leg-level reconciliation, asset-account legs only, brokerage-side linkage.** Only legs that appear in some `ImportLine.matched_legs` M2M (per ADR-0026) are immutable; all other legs of the same Transaction are freely editable. The reconciliation linkage lives on the brokerage side (`ImportLine`), not on core's `TransactionLeg`; "is this leg reconciled?" is a reverse-relationship existence check (`leg.reconciliation_lines.exists()`). Whether an account is eligible for reconciliation at all is gated by `AccountProfile.allows_reconciliation` (ADR-0014).
 
 This means **Approaches 7 and 8 (edit-in-place under leg-level reconciliation) are now viable** and are likely the cleanest answer for the disclosure-capture question that this ADR is about. Approaches 1, 3, and 4 (separate adjustment Transaction, with or without a relationship model) remain available as alternatives for adopters who prefer an audit-trail-style approach with one Transaction per disclosure event. Approaches 2, 5, and 6 are off the table.
 
@@ -70,7 +70,7 @@ Under whole-transaction reconciliation, the same outcome requires a separate adj
 
 If we go with leg-level reconciliation, we need to define:
 
-- **How is "broker-reported" determined?** A flag on `TransactionLeg` set at import time? A property of the Account (`AccountProfile.is_broker_reported = True`)? Inferred from the leg's account being the one named in the `TransactionImport`?
+- **How is "broker-reported" determined?** Resolved by ADR-0014 (amended 2026-06-09): `AccountProfile.allows_reconciliation`, a boolean set at account setup. A leg is broker-reported iff `leg.account.brokerage_profile.allows_reconciliation` is True.
 - **Is the lock advisory or enforced?** Enforced via a `pre_save`/`pre_delete` signal that refuses to touch a locked leg? Or convention-only, with admin UI warning?
 - **What about deletion of the parent Transaction?** Does it cascade to locked legs? (Yes, almost certainly — locking only protects against in-place edits.)
 - **Can you UN-lock?** E.g., if the user discovers the broker statement itself was wrong. Probably yes, but it should require a deliberate action.

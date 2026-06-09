@@ -314,7 +314,10 @@ def process_batch(batch: ImportBatch, source) -> None:
             line.matched_legs.add(*existing_legs)  # link, don't materialize
         else:
             for tx in schema.materialize_line(line):
-                asset_legs = [leg for leg in tx.legs if leg.account.is_broker_asset]
+                asset_legs = [
+                    leg for leg in tx.legs
+                    if leg.account.brokerage_profile.allows_reconciliation
+                ]
                 line.matched_legs.add(*asset_legs)
 ```
 

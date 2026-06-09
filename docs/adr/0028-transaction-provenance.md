@@ -74,12 +74,12 @@ def find_matching_legs(line: ImportLine) -> list[TransactionLeg] | MatchAmbiguou
 
     candidates = Transaction.objects.filter(
         origin="manual",
-        transaction_date__range=(
+        timestamp__date__range=(
             criteria.date - timedelta(days=criteria.date_window_days),
             criteria.date + timedelta(days=criteria.date_window_days),
         ),
         legs__account=line.batch.account,
-        legs__account__is_broker_asset=True,
+        legs__account__brokerage_profile__allows_reconciliation=True,
         legs__instrument=criteria.instrument,
         legs__amount=criteria.amount,
         legs__reconciliation_lines__isnull=True,
@@ -94,7 +94,7 @@ def find_matching_legs(line: ImportLine) -> list[TransactionLeg] | MatchAmbiguou
     transaction = candidates.first()
     return list(
         transaction.legs.filter(
-            account__is_broker_asset=True,
+            account__brokerage_profile__allows_reconciliation=True,
             reconciliation_lines__isnull=True,
         )
     )
@@ -174,7 +174,7 @@ def process_batch(batch, source):
     # ... per ADR-0027 ...
     orphans = Transaction.objects.filter(
         origin="import",
-        legs__account__is_broker_asset=True,
+        legs__account__brokerage_profile__allows_reconciliation=True,
         legs__reconciliation_lines__isnull=True,
         # ... scoped to this batch ...
     )
@@ -244,6 +244,8 @@ The schema computes a stable hash from `(date, instrument, amount, side, account
 
 ## Related
 
+- ADR-0014 (Account capability flags) — `AccountProfile.allows_reconciliation` is the flag the dedup query filters on to scope candidates to broker-reported asset accounts.
+- ADR-0012 (Transactions as atomic events) — the dedup date window is applied against `Transaction.timestamp` (settlement), consistent with the "broker statement reconciliation" row in ADR-0012's use-case table.
 - ADR-0020 (Core ships only numeric integrity) — `Transaction.origin` is metadata in core, not semantic enforcement.
 - ADR-0024 (Reconciliation scope) — origin is orthogonal to leg-level reconciliation state; matching a manual leg uses standard `matched_legs` mechanics.
 - ADR-0025 (Broker download lines) — the multi-candidate ambiguity surface extends the admin + DRF surface this ADR specifies.

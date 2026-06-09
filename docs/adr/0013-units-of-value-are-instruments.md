@@ -71,7 +71,7 @@ The same query pattern returns AAPL holdings, BTC holdings, option contract hold
 }
 ```
 
-Hosts that want to present cash separately in UI (e.g., "Cash: $1,234 / Holdings: $50,000") filter by `instrument.kind in ("currency", "crypto")` in their view layer. The ledger does not distinguish.
+Hosts that want to present cash separately in UI (e.g., "Cash: $1,234 / Holdings: $50,000") filter by the presence of the brokerage-side metadata extensions — e.g., `Instrument.objects.filter(Q(currency_meta__isnull=False) | Q(crypto_meta__isnull=False))` — in their view layer. The ledger does not distinguish; per ADR-0020, core has no `kind` discriminator on `Instrument`.
 
 ### Per-instrument precision handles the variance
 
@@ -191,9 +191,9 @@ Each seeded currency is created with appropriate `quantity_decimals`, ISO 4217 c
 
 **Easier:**
 
-- One uniform ledger schema and one balance trigger across every asset class. No `if instrument.kind == "currency"` branches anywhere.
+- One uniform ledger schema and one balance trigger across every asset class. No "is this a currency?" branches anywhere in core; categorization is the host's concern via brokerage metadata extensions.
 - Multi-currency, multi-asset portfolios are first-class. A user holding USD + EUR + BTC + AAPL + PFE1 calls has five `Holding` rows, queried identically.
-- Crypto and stablecoins fit without invention. USDC is `kind="crypto"` with a stablecoin flag, traded exactly like any other Instrument.
+- Crypto and stablecoins fit without invention. USDC has a `CryptoMeta` row with `is_stablecoin=True` and `pegged_to=USD_instrument`, traded by the ledger exactly like any other Instrument.
 - CEDEAR/ADR/foreign-share patterns (per ADR-0009) work because the cash side (ARS for CEDEAR, USD for ADR) is uniform with the asset side.
 - FX is the same shape as any other trade: balanced legs through an external account. No FX engine, no implicit rates.
 - The package can claim to be "a ledger for any unit of value" without qualification.

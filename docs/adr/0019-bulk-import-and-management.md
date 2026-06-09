@@ -304,5 +304,5 @@ import_transactions(parsed_rows, batch=new_batch)
 - ADR-0004 establishes the deferred balance trigger that batched inserts must compose with correctly.
 - ADR-0006 establishes CASCADE on user delete; combined with the single-owner Account model, makes whole-transaction DELETE balance-safe (`delete_range` relies on this).
 - ADR-0011 establishes that core is the ledger primitive; this ADR's split (core ships primitives, brokerage ships policy) is a direct application.
-- ADR-0015 establishes the three-app distribution; this ADR places import management in the existing brokerage app rather than creating a fourth.
+- ADR-0015 establishes the single-app distribution; this ADR places import management in the brokerage sub-package rather than creating a separate one.
 - OQ-13 in `open-questions.md` is resolved by this ADR.

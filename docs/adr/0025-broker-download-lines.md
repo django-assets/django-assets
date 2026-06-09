@@ -23,7 +23,7 @@ What ADR-0019 does **not** cover is the **per-row storage and lifecycle** of the
 
 2. **Track matched vs. unmatched state.** A broker download may contain rows that don't match anything in the ledger yet (the user hasn't entered the corresponding manual transaction yet, or the importer couldn't find a match). The user wants to see a queue of "unmatched broker lines awaiting reconciliation" to work through.
 
-3. **Bidirectional reconciliation state.** Per ADR-0024, a `TransactionLeg` has `reconciled_by` pointing at a `ReconciliationSource`. For broker downloads, the matched-versus-unmatched state of each individual line is the inverse view: instead of asking "is this leg reconciled?", you ask "is this download line matched?" Both views should stay consistent.
+3. **Bidirectional reconciliation state.** Per ADR-0024 and ADR-0026, the reconciliation linkage is the `ImportLine.matched_legs` M2M pointing at `core.TransactionLeg`s. For broker downloads, the matched-versus-unmatched state of each individual line is the inverse view: instead of asking "is this leg reconciled?" (`leg.reconciliation_lines.exists()`), you ask "is this download line matched?" (`line.matched_legs.exists()`). Both views are reads against the same M2M and stay consistent by construction.
 
 4. **Unflip → unmatched.** When a user unflips a reconciled leg (per ADR-0024), the line that previously reconciled it returns to the unmatched pool, available for re-matching against a different leg or remaining unmatched until the user fixes the underlying mistake.
 
@@ -91,8 +91,8 @@ Host-app screens (a dedicated "reconcile" page, for example) are out of scope. T
 
 1. **What's the unit of storage?** One record per row in the broker file? One record per leg of the resulting Transaction? Both?
 2. **Where do the records live?** In the brokerage sub-package? In core as a generic "import line" primitive? In a host-app model?
-3. **What's the relationship to `ReconciliationSource` (ADR-0024)?** Is `ReconciliationSource` derived from a download line? Is the download line itself the `ReconciliationSource`? Or are they distinct related models?
-4. **How is matched/unmatched state queried?** A boolean field on the line? Implied by a non-null FK to a `TransactionLeg` (or `ReconciliationSource`)? A separate queryset method?
+3. **What's the relationship to a separate `ReconciliationSource` model?** *(Historical: an earlier draft of ADR-0024 proposed such a model. The Accepted ADR-0024 did not create one — `ImportLine` itself carries the reconciliation linkage via the `matched_legs` M2M. This sub-question is therefore moot; left here for context.)*
+4. **How is matched/unmatched state queried?** A boolean field on the line? Implied by an M2M existence check against `TransactionLeg`? A separate queryset method?
 5. **What happens to unmatched lines over time?** Do they persist indefinitely, or are they archived after some period? Do they show up in a perpetual "to-reconcile" list?
 6. **What about lines that aren't expected to match anything?** Some statement rows are informational only (running balance, dividend rate, year-to-date summary). Are they stored as `ImportLine` records too, or filtered out at import time?
 7. **Multi-leg matches.** A single broker line can correspond to multiple ledger legs (an internal transfer between two of the user's accounts; an option exercise that affects shares, cash, and option contract balances). Is the line-to-leg relationship one-to-many?

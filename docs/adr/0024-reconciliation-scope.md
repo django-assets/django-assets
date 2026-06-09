@@ -4,6 +4,8 @@
 
 Accepted — 2026-06-07
 
+Note: the manual-match path (Path 2 in "Two paths produce reconciliation") depends on the dedup mechanics specified in ADR-0028 (Transaction provenance), which is still Proposed. If ADR-0028 changes direction during ratification, Path 2's surface (not its principle) may need a corresponding update here.
+
 ## Context
 
 The `django-assets` package needs a precise definition of **reconciliation**: which `TransactionLeg`s of an imported Transaction must remain immutable after import, and which legs are free to be edited or extended by the user as new information arrives.
@@ -100,7 +102,7 @@ Per ADR-0020, core ships only numeric integrity. Reconciliation is workflow poli
 
 The reconciliation linkage is a brokerage-side model with a FK to `django_assets.TransactionLeg`. This is consistent with ADR-0020 — brokerage knows about core (it depends on core); core does not know about brokerage.
 
-The query direction inverts what an earlier sketch of this ADR proposed. Instead of "leg has a `reconciled_by` FK," the relationship is "a reconciliation record on the brokerage side knows which leg it reconciles." Asking "is this leg reconciled?" becomes a reverse-relationship query (`leg.reconciliation_records.exists()` or similar), and "what source reconciled it?" follows the reverse FK.
+The query direction inverts what an earlier sketch of this ADR proposed. Instead of "leg has a `reconciled_by` FK," the relationship is "a reconciliation record on the brokerage side knows which leg it reconciles." Asking "is this leg reconciled?" becomes a reverse-relationship query (`leg.reconciliation_lines.exists()`, per ADR-0026's M2M), and "what source reconciled it?" follows the reverse relation.
 
 A sketch of the brokerage models is in ADR-0025 (broker download lines and matching workflow). The exact shape — whether reconciliation lives in a single `ImportLine` model, a separate `Reconciliation` linkage model, or both — is resolved in ADR-0025. ADR-0024 establishes only the principle: reconciliation is a brokerage concern, the FK points from brokerage to core's `TransactionLeg`, and core itself is unchanged.
 
@@ -136,7 +138,11 @@ Reconciliation is a claim about external structured evidence. If no such evidenc
 
 ### 1. How is "broker-reported" tracked on a leg?
 
-Resolved: via a brokerage-side reconciliation record that FKs to `core.TransactionLeg`. Core's `TransactionLeg` has no reconciliation field; the relationship is established and queried in the reverse direction (`leg.reconciliation_records.exists()` or similar).
+Two pieces:
+
+**What makes an account broker-reported?** The `AccountProfile.allows_reconciliation` boolean flag (per ADR-0014, added 2026-06-09). Set at account setup, this gates whether any leg touching the account is eligible for reconciliation. A leg "touches a broker-reported account" iff `leg.account.brokerage_profile.allows_reconciliation` is True. The flag can be toggled off only when no current reconciliation linkages reference legs on the account.
+
+**How is reconciliation state itself tracked on a leg?** Via a brokerage-side reconciliation record that FKs to `core.TransactionLeg`. Core's `TransactionLeg` has no reconciliation field; the relationship is established and queried in the reverse direction (`leg.reconciliation_lines.exists()` per ADR-0026's M2M).
 
 ### 2. Where does the reconciliation model live and what shape does it take?
 
@@ -220,7 +226,9 @@ This is purely a brokerage concern — core has no `ImportLine`, no `Reconciliat
 
 ## Related
 
+- ADR-0014 (Account capability flags) — defines `AccountProfile.allows_reconciliation`, the flag that determines whether legs touching an account are eligible for reconciliation. Amended 2026-06-09 to add this field.
 - ADR-0019 (Bulk import primitives; import management) — establishes `ImportBatch` and `TransactionImport`. Reconciled legs would be marked at the time the import creates them.
 - ADR-0021 (Brokerage templates follow the source's transaction shape) — the principle that recordings must match what the source confirmed; this ADR sharpens that to "match the asset-side ground truth specifically."
 - ADR-0022 (No append-only enforcement) — Scope C doesn't conflict; mutation of non-reconciled legs is allowed by design.
 - ADR-0023 (Disclosure transactions) — if Scope C is accepted, Approaches 7 and 8 in ADR-0023 become viable. If Scope A or B wins, those approaches are off the table.
+- ADR-0028 (Transaction provenance) — specifies the dedup mechanics for Path 2 (manual match against a later-arriving import). Still Proposed; see Status note.
