@@ -71,9 +71,7 @@ def test_final_slice_absorbs_rounding(user, sale_tx, aapl, usd, accounts):
     cash_leg = sale_tx.legs.get(account=accounts["cash"])
     from django_assets.trades.models import TradeAllocation
 
-    total_cash = sum(
-        a.amount for a in TradeAllocation.objects.filter(leg=cash_leg)
-    )
+    total_cash = sum(a.amount for a in TradeAllocation.objects.filter(leg=cash_leg))
     assert total_cash == cash_leg.amount  # exact, no rounding residue
     assert first.net_position(aapl) + second.net_position(aapl) == D("-1000")
 
