@@ -26,6 +26,7 @@ class DjangoAssetsConfig(AppConfig):
             post_migrate.connect(install_ddl, sender=self, dispatch_uid="django_assets.install_ddl")
         else:
             post_migrate.disconnect(sender=self, dispatch_uid="django_assets.install_ddl")
-        # 2. System checks (PostgreSQL backend + version floor) — core C1.
+        # 2. System checks (PostgreSQL backend + version floor).
+        from django_assets.core import checks  # noqa: F401  (registers on import)
         # 3. Import-schema autodiscovery (ADR-0027) — brokerage B4.
         # 4. Reconciliation signal handlers (ADR-0024) — brokerage B6.
