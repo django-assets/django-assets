@@ -36,5 +36,11 @@ class DjangoAssetsConfig(AppConfig):
             sender=AccountProfile,
             dispatch_uid="django_assets.guard_reconciliation_flag",
         )
-        # 4. Import-schema autodiscovery (ADR-0027) — brokerage B4.
+        # 4. Import-schema autodiscovery (ADR-0027): built-ins register on
+        #    import; host apps contribute via a `schemas` module.
+        from django.utils.module_loading import autodiscover_modules
+
+        from django_assets.brokerage.schemas import builtin  # noqa: F401
+
+        autodiscover_modules("schemas")
         # 5. Reconciliation signal handlers (ADR-0024) — brokerage B6.

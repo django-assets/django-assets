@@ -4,7 +4,12 @@ Django discovers models via <app>.models; each sub-package keeps its own
 models module and re-exports here.
 """
 
-from django_assets.brokerage.models import AccountProfile
+from django_assets.brokerage.models import (
+    AccountProfile,
+    ImportBatch,
+    ImportLine,
+    TransactionImport,
+)
 from django_assets.core.models import (
     Account,
     Exchange,
@@ -29,8 +34,11 @@ __all__ = [
     "EquityMeta",
     "Exchange",
     "Identifier",
+    "ImportBatch",
+    "ImportLine",
     "Instrument",
     "OptionMeta",
     "Transaction",
+    "TransactionImport",
     "TransactionLeg",
 ]
