@@ -22,11 +22,12 @@ from django_assets.trades.exceptions import OverAllocationError
 
 
 class _PnlEvent:
-    """Per-transaction P&L walk state: position deltas + attributed cash."""
+    """Per-event P&L walk state: position deltas + attributed cash."""
 
     def __init__(self) -> None:
         self.positions: dict[Instrument, Decimal] = {}
         self.cash: Decimal = Decimal(0)
+        self.sort_key: tuple = (None, 0, 0)  # type: ignore[type-arg]
 
 
 class TradeQuerySet(models.QuerySet["Trade"]):
@@ -196,90 +197,104 @@ class Trade(models.Model):
     ) -> "list[TradeAllocation]":
         """The default pro-rata allocator (spec §4, ADR-0030 §3).
 
-        Leg-role convention, grounded in double-entry: the accounts
-        holding the OPPOSITE-sign asset leg are the counterparty mirror —
-        never allocated. The perspective account's cash slice is
-        revenue (+) / cost (−); other cash legs are fees. Cash slices
-        quantize to each leg's instrument precision; an assign that
-        exhausts the asset leg takes exact remainders so slices always
-        sum to the full leg (no rounding residue).
+        Leg roles come from double-entry structure: mirrored same-
+        instrument pairs split into a user-side leg and a counterparty
+        mirror (never allocated). Cash-role instruments are those with
+        no price_currency (base currencies). The largest non-mirror cash
+        leg is the settlement slice (revenue/cost by sign); smaller cash
+        legs are fees. quantity= targets one instrument's position;
+        fraction= takes that share of EVERY user-side leg. An assign
+        that exhausts a leg takes exact remainders (no rounding residue).
         """
-        legs = list(transaction.legs.select_related("account", "instrument"))
-        asset_legs = [
-            leg for leg in legs if instrument is None or leg.instrument_id == instrument.pk
-        ]
-        if instrument is None:
-            # fraction mode: the tracked asset is the non-cash instrument
-            # with mirrored legs; fall back to the largest instrument group.
-            by_instrument: dict[int, list[TransactionLeg]] = {}
-            for leg in legs:
-                by_instrument.setdefault(leg.instrument_id, []).append(leg)
-            candidates = [group for group in by_instrument.values() if len(group) == 2]
-            # The settlement currency shows up on the perspective account;
-            # prefer mirrored groups that DON'T (the traded asset).
-            non_cash = [
-                group
-                for group in candidates
-                if not any(leg.account_id == transaction.account_id for leg in group)
-            ]
-            pool = non_cash or candidates
-            asset_legs = max(pool, key=lambda group: abs(group[0].amount))
-        position_leg, mirror_accounts = _split_position_and_mirror(asset_legs, legs)
+        # id order = template insertion order: every template adds the
+        # user-side leg of a mirrored pair first, which keeps the
+        # user/mirror tiebreak deterministic when structure alone is
+        # symmetric (pure two-leg events like expiries).
+        legs = list(transaction.legs.select_related("account", "instrument").order_by("id"))
+        groups: dict[int, list[TransactionLeg]] = {}
+        for leg in legs:
+            groups.setdefault(leg.instrument_id, []).append(leg)
+
+        mirror_accounts: set[int] = set()
+        position_legs: dict[int, TransactionLeg] = {}
+        for group in groups.values():
+            if len(group) != 2:
+                continue
+            user_leg, mirrors = _split_position_and_mirror(group, legs)
+            mirror_accounts |= mirrors
+            if user_leg.instrument.price_currency_id is not None:
+                position_legs[user_leg.instrument_id] = user_leg
 
         if fraction is not None:
             ratio = to_decimal(fraction, param="fraction")
-            qty = abs(position_leg.amount) * ratio
-        elif quantity is not None:
+            targets = list(position_legs.values())
+            exhausts = ratio == 1
+        elif quantity is not None and instrument is not None:
+            target = position_legs.get(instrument.pk)
+            if target is None:
+                raise ValueError(
+                    f"transaction {transaction.pk} has no mirrored position "
+                    f"legs of {instrument.code}"
+                )
             qty = to_decimal(quantity, param="quantity")
+            already = TradeAllocation.objects.filter(leg=target).aggregate(
+                total=models.Sum("amount")
+            )["total"] or Decimal(0)
+            exhausts = qty == abs(target.amount) - abs(already)
+            ratio = qty / abs(target.amount)
+            targets = [target]
         else:
-            raise ValueError("assign() needs quantity= or fraction=")
-        already = TradeAllocation.objects.filter(leg=position_leg).aggregate(
-            total=models.Sum("amount")
-        )["total"] or Decimal(0)
-        remaining = abs(position_leg.amount) - abs(already)
-        exhausts = qty == remaining
-        ratio = qty / abs(position_leg.amount)
+            raise ValueError("assign() needs quantity= plus instrument=, or fraction=")
 
         allocations: list[TradeAllocation] = []
         with db_transaction.atomic():
-            sign = 1 if position_leg.amount > 0 else -1
-            allocations.append(self.assign_leg(position_leg, sign * qty))
-            for leg in legs:
-                if leg.pk == position_leg.pk or leg.account_id in mirror_accounts:
-                    continue
-                if leg.instrument_id == position_leg.instrument_id:
-                    continue  # other asset slices only via explicit assign_leg
-                if exhausts:
-                    taken = TradeAllocation.objects.filter(leg=leg).aggregate(
-                        total=models.Sum("amount")
-                    )["total"] or Decimal(0)
-                    slice_amount = leg.amount - taken
-                else:
-                    slice_amount = leg.instrument.quantize(leg.amount * ratio)
+            for leg in targets:
+                allocations.append(self.assign_leg(leg, _slice(leg, ratio, exhausts)))
+            cash_legs = sorted(
+                (
+                    leg
+                    for leg in legs
+                    if leg.account_id not in mirror_accounts
+                    and leg.instrument.price_currency_id is None
+                ),
+                key=lambda leg: abs(leg.amount),
+                reverse=True,
+            )
+            for index, leg in enumerate(cash_legs):
+                slice_amount = _slice(leg, ratio, exhausts)
                 if slice_amount == 0:
                     continue
-                if leg.account_id == transaction.account_id:
+                if index == 0:
                     category = "revenue" if leg.amount > 0 else "cost"
                 else:
                     category = "fee"
                 allocations.append(self.assign_leg(leg, slice_amount, category=category))
         return allocations
 
-    # -- derived views (never stored) -------------------------------------
+    # -- derived views (never stored; real + virtual layers) ---------------
 
     def net_position(self, instrument: Instrument | None = None) -> Decimal:
-        allocations = TradeAllocation.objects.filter(trade_id__in=self._tree_pks(), category="")
+        tree = self._tree_pks()
+        allocations = TradeAllocation.objects.filter(trade_id__in=tree, category="")
+        entries = VirtualEntry.objects.filter(trade_id__in=tree, category="")
         if instrument is not None:
             allocations = allocations.filter(leg__instrument=instrument)
-        total = allocations.aggregate(total=models.Sum("amount"))["total"]
-        return total if total is not None else Decimal(0)
+            entries = entries.filter(instrument=instrument)
+        real = allocations.aggregate(total=models.Sum("amount"))["total"] or Decimal(0)
+        virtual = entries.aggregate(total=models.Sum("amount"))["total"] or Decimal(0)
+        return real + virtual
 
     def tracked_instruments(self) -> "list[Instrument]":
-        """Instruments with position (category='') allocations — cash
+        """Instruments with position (category='') activity — cash
         settlement roles carry categories and are excluded by design."""
-        ids = (
-            TradeAllocation.objects.filter(trade_id__in=self._tree_pks(), category="")
+        tree = self._tree_pks()
+        ids = set(
+            TradeAllocation.objects.filter(trade_id__in=tree, category="")
             .values_list("leg__instrument_id", flat=True)
+            .distinct()
+        ) | set(
+            VirtualEntry.objects.filter(trade_id__in=tree, category="")
+            .values_list("instrument_id", flat=True)
             .distinct()
         )
         return list(Instrument.objects.filter(pk__in=ids).order_by("pk"))
@@ -287,16 +302,31 @@ class Trade(models.Model):
     def _position_events(
         self, instruments: "list[Instrument] | None" = None
     ) -> "list[tuple[datetime.datetime, Decimal, int]]":
-        allocations = TradeAllocation.objects.filter(trade_id__in=self._tree_pks())
+        """Merged (timestamp, amount, instrument) stream: real legs first
+        at equal timestamps, then virtual entries, tiebroken by id."""
+        tree = self._tree_pks()
+        allocations = TradeAllocation.objects.filter(trade_id__in=tree)
+        entries = VirtualEntry.objects.filter(trade_id__in=tree)
         if instruments is None:
             allocations = allocations.filter(category="")
+            entries = entries.filter(category="")
         else:
-            allocations = allocations.filter(leg__instrument__in=[inst.pk for inst in instruments])
-        return list(
-            allocations.values_list(
-                "leg__transaction__timestamp", "amount", "leg__instrument_id"
-            ).order_by("leg__transaction__timestamp", "leg__transaction_id")
-        )
+            pks = [inst.pk for inst in instruments]
+            allocations = allocations.filter(leg__instrument_id__in=pks)
+            entries = entries.filter(instrument_id__in=pks)
+        merged = [
+            (ts, 0, row_id, amount, instrument_id)
+            for ts, amount, instrument_id, row_id in allocations.values_list(
+                "leg__transaction__timestamp", "amount", "leg__instrument_id", "pk"
+            )
+        ] + [
+            (ts, 1, row_id, amount, instrument_id)
+            for ts, amount, instrument_id, row_id in entries.values_list(
+                "transfer__timestamp", "amount", "instrument_id", "pk"
+            )
+        ]
+        merged.sort(key=lambda item: (item[0], item[1], item[2]))
+        return [(ts, amount, instrument_id) for ts, _k, _i, amount, instrument_id in merged]
 
     def status_for(self, instruments: "list[Instrument] | None" = None) -> str:
         events = self._position_events(instruments)
@@ -304,7 +334,7 @@ class Trade(models.Model):
         for _ts, amount, instrument_id in events:
             positions[instrument_id] = positions.get(instrument_id, Decimal(0)) + amount
         open_now = any(total != 0 for total in positions.values())
-        return "open" if open_now else ("closed" if events else "closed")
+        return "open" if open_now else "closed"
 
     @property
     def status(self) -> str:
@@ -312,7 +342,8 @@ class Trade(models.Model):
 
     @property
     def open_date(self) -> datetime.datetime | None:
-        """Earliest settlement timestamp where a tracked position left 0."""
+        """Earliest event where a tracked position left zero — real leg
+        or virtual entry alike."""
         positions: dict[int, Decimal] = {}
         for ts, amount, instrument_id in self._position_events():
             before = positions.get(instrument_id, Decimal(0))
@@ -323,8 +354,8 @@ class Trade(models.Model):
 
     @property
     def closed_date(self) -> datetime.datetime | None:
-        """Latest timestamp where ALL tracked positions returned to 0;
-        None while open."""
+        """Latest event where ALL tracked positions returned to zero;
+        None while open. A trade can close purely virtually."""
         positions: dict[int, Decimal] = {}
         result: datetime.datetime | None = None
         events = self._position_events()
@@ -332,6 +363,80 @@ class Trade(models.Model):
             positions[instrument_id] = positions.get(instrument_id, Decimal(0)) + amount
             result = ts if all(total == 0 for total in positions.values()) else None
         return result if events else None
+
+    def check_consistency(self) -> "dict[str, list[str]]":
+        """Re-run the checks over the trade's history (spec §5):
+        partition violations are ERRORS (ADR-0030); position crossings —
+        including retroactive ones from later real-allocation edits —
+        are WARNINGS, never blocked (ADR-0031/0022)."""
+        errors: list[str] = []
+        warnings: list[str] = []
+        tree = self._tree_pks()
+        leg_ids = (
+            TradeAllocation.objects.filter(trade_id__in=tree)
+            .values_list("leg_id", flat=True)
+            .distinct()
+        )
+        for leg in TransactionLeg.objects.filter(pk__in=leg_ids):
+            allocated = TradeAllocation.objects.filter(leg=leg).aggregate(
+                total=models.Sum("amount")
+            )["total"] or Decimal(0)
+            if abs(allocated) > abs(leg.amount):
+                errors.append(
+                    f"partition violation on leg {leg.pk}: allocations sum to "
+                    f"{allocated} against leg amount {leg.amount}"
+                )
+        # Crossing walk over the merged event stream, virtual rows only.
+        events = self._merged_events_with_kind()
+        positions: dict[int, Decimal] = {}
+        for _ts, kind, _row, amount, instrument_id in events:
+            before = positions.get(instrument_id, Decimal(0))
+            after = before + amount
+            if (
+                kind == 1
+                and before != 0
+                and (amount > 0) != (before > 0)
+                and abs(amount) > abs(before)
+            ):
+                warnings.append(
+                    f"position crossing: virtual entry of {amount} on instrument "
+                    f"{instrument_id} pushed the book from {before} through zero"
+                )
+            positions[instrument_id] = after
+        # Retroactive check: a non-zero position resting purely on
+        # virtual entries means a later real-allocation edit pulled the
+        # book out from under a transfer (warn, never block).
+        real_net: dict[int, Decimal] = {}
+        virtual_net: dict[int, Decimal] = {}
+        for _ts, kind, _row, amount, instrument_id in events:
+            bucket = real_net if kind == 0 else virtual_net
+            bucket[instrument_id] = bucket.get(instrument_id, Decimal(0)) + amount
+        for instrument_id, virtual_total in virtual_net.items():
+            if virtual_total != 0 and real_net.get(instrument_id, Decimal(0)) == 0:
+                warnings.append(
+                    f"virtual-only position of {virtual_total} in instrument "
+                    f"{instrument_id}: a real-allocation edit retroactively "
+                    f"created a position crossing (ADR-0031 — warned, never blocked)"
+                )
+        return {"errors": errors, "warnings": warnings}
+
+    def _merged_events_with_kind(
+        self,
+    ) -> "list[tuple[datetime.datetime, int, int, Decimal, int]]":
+        tree = self._tree_pks()
+        merged = [
+            (ts, 0, row_id, amount, instrument_id)
+            for ts, amount, instrument_id, row_id in TradeAllocation.objects.filter(
+                trade_id__in=tree, category=""
+            ).values_list("leg__transaction__timestamp", "amount", "leg__instrument_id", "pk")
+        ] + [
+            (ts, 1, row_id, amount, instrument_id)
+            for ts, amount, instrument_id, row_id in VirtualEntry.objects.filter(
+                trade_id__in=tree, category=""
+            ).values_list("transfer__timestamp", "amount", "instrument_id", "pk")
+        ]
+        merged.sort(key=lambda item: (item[0], item[1], item[2]))
+        return merged
 
     # -- tagging (spec §2.5) ----------------------------------------------
 
@@ -371,36 +476,70 @@ class Trade(models.Model):
         if as_of is not None:
             allocations = allocations.filter(leg__transaction__timestamp__lte=as_of)
 
-        by_transaction: dict[int, _PnlEvent] = {}
+        events: dict[tuple[int, int], _PnlEvent] = {}
         for allocation in allocations.order_by(
             "leg__transaction__timestamp", "leg__transaction_id"
         ):
-            event = by_transaction.setdefault(allocation.leg.transaction_id, _PnlEvent())
+            key = (0, allocation.leg.transaction_id)
+            event = events.setdefault(key, _PnlEvent())
+            event.sort_key = (allocation.leg.transaction.timestamp, 0, key[1])
             if allocation.category == "":
                 inst = allocation.leg.instrument
                 event.positions[inst] = event.positions.get(inst, Decimal(0)) + allocation.amount
             elif allocation.category in ("revenue", "cost"):
                 event.cash += allocation.amount
+        virtual_entries = VirtualEntry.objects.filter(trade_id__in=self._tree_pks()).select_related(
+            "transfer", "instrument"
+        )
+        if as_of is not None:
+            virtual_entries = virtual_entries.filter(transfer__timestamp__lte=as_of)
+        for entry in virtual_entries:
+            key = (1, entry.transfer_id)
+            event = events.setdefault(key, _PnlEvent())
+            event.sort_key = (entry.transfer.timestamp, 1, key[1])
+            if entry.category == "":
+                event.positions[entry.instrument] = (
+                    event.positions.get(entry.instrument, Decimal(0)) + entry.amount
+                )
+            elif entry.category in ("revenue", "cost"):
+                event.cash += entry.amount
 
         realized = Decimal(0)
         position: dict[Instrument, Decimal] = {}
         basis: dict[Instrument, Decimal] = {}
-        for event in by_transaction.values():
-            cash = event.cash
+        for event in sorted(events.values(), key=lambda item: item.sort_key):
+            # Within an event, cash follows the OPENING side when both
+            # openings and closings occur (assignment/exercise: the strike
+            # cash IS the new position's basis); otherwise it attaches to
+            # whichever side exists, split equally across instruments.
+            openings: list[tuple[Instrument, Decimal]] = []
+            closings: list[tuple[Instrument, Decimal]] = []
             for inst, delta in event.positions.items():
                 pos = position.get(inst, Decimal(0))
-                held_basis = basis.get(inst, Decimal(0))
                 if pos == 0 or (delta > 0) == (pos > 0):
-                    position[inst] = pos + delta
-                    basis[inst] = held_basis + cash
+                    openings.append((inst, delta))
                 else:
-                    closing = min(abs(delta), abs(pos))
-                    released = held_basis * closing / abs(pos)
-                    realized += cash * closing / abs(delta) + released
-                    basis[inst] = held_basis - released
-                    position[inst] = pos + delta
-                    if abs(delta) > closing:  # crossed through zero
-                        basis[inst] += cash * (abs(delta) - closing) / abs(delta)
+                    closings.append((inst, delta))
+            cash_targets = openings if openings else closings
+            share = event.cash / len(cash_targets) if cash_targets else Decimal(0)
+            for inst, delta in closings:
+                pos = position.get(inst, Decimal(0))
+                held_basis = basis.get(inst, Decimal(0))
+                cash = Decimal(0) if openings else share
+                closing = min(abs(delta), abs(pos))
+                released = held_basis * closing / abs(pos)
+                realized += cash * closing / abs(delta) + released
+                basis[inst] = held_basis - released
+                position[inst] = pos + delta
+                if abs(delta) > closing:  # crossed through zero
+                    basis[inst] = basis.get(inst, Decimal(0)) + cash * (abs(delta) - closing) / abs(
+                        delta
+                    )
+            for inst, delta in openings:
+                position[inst] = position.get(inst, Decimal(0)) + delta
+                basis[inst] = basis.get(inst, Decimal(0)) + share
+            if not event.positions and event.cash:
+                realized += event.cash  # pure-cash event (virtual fee move)
 
         open_basis = sum(basis[inst] for inst, pos in position.items() if pos != 0)
         cost_basis = -open_basis
@@ -429,7 +568,7 @@ class Trade(models.Model):
             "total_pnl": total,
             "cost_basis": cost_basis,
             "current_value": current_value,
-            "transactions_count": len(by_transaction),
+            "transactions_count": sum(1 for key in events if key[0] == 0),
             "unpriced": unpriced,
         }
 
@@ -450,6 +589,17 @@ class Trade(models.Model):
             .values_list("leg__account_id", flat=True)
             .distinct()
         )
+
+
+def _slice(leg: TransactionLeg, ratio: Decimal, exhausts: bool) -> Decimal:
+    """Pro-rata slice of a leg: quantized per the leg instrument, except
+    a final (exhausting) assign takes the exact remainder."""
+    if exhausts:
+        taken = TradeAllocation.objects.filter(leg=leg).aggregate(total=models.Sum("amount"))[
+            "total"
+        ] or Decimal(0)
+        return leg.amount - taken
+    return leg.instrument.quantize(leg.amount * ratio)
 
 
 def _precheck_partition(
@@ -542,6 +692,66 @@ def _split_position_and_mirror(
         if not is_mirror(candidate):
             return candidate, {other.account_id}
     return first, {second.account_id}
+
+
+class VirtualTransfer(models.Model):
+    """The trades-book analog of a core Transaction (ADR-0031): an
+    atomic, balanced event moving position and P&L BETWEEN trades. No FK
+    to any core ledger row exists, by construction."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="virtual_transfers"
+    )
+    timestamp = models.DateTimeField(db_index=True)
+    description = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    objects: ClassVar[models.Manager["VirtualTransfer"]] = models.Manager()
+
+    #: Advisory PositionCrossingWarning list, attached by the helpers —
+    #: informational only, never persisted, never blocking (ADR-0031).
+    warnings: "list[PositionCrossingWarning]"
+
+    def __str__(self) -> str:
+        return f"virtual transfer {self.pk} @ {self.timestamp:%Y-%m-%d}"
+
+
+class VirtualEntry(models.Model):
+    """One trade's side of a virtual transfer; per transfer, per
+    instrument, entries sum to exactly zero (DB-enforced at COMMIT)."""
+
+    transfer = models.ForeignKey(VirtualTransfer, on_delete=models.CASCADE, related_name="entries")
+    trade = models.ForeignKey(Trade, on_delete=models.CASCADE, related_name="virtual_entries")
+    instrument = models.ForeignKey(Instrument, on_delete=models.PROTECT, related_name="+")
+    amount = models.DecimalField(max_digits=40, decimal_places=18)
+    category = models.CharField(max_length=30, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    objects: ClassVar[models.Manager["VirtualEntry"]] = models.Manager()
+
+    class Meta:
+        indexes = [
+            # The balance trigger's GROUP BY (spec §2.4).
+            models.Index(fields=["transfer", "instrument"], name="virtualentry_balance_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.amount} {self.instrument.code} → {self.trade}"
+
+
+class PositionCrossingWarning:
+    """Advisory: an entry pushed a trade's book through zero (ADR-0031).
+    The balance rule guarantees the excess landed in the counterparty
+    trade(s); the aggregate still equals the ledger."""
+
+    def __init__(self, trade: Trade, instrument: Instrument, kind: str, detail: str) -> None:
+        self.trade = trade
+        self.instrument = instrument
+        self.kind = kind  # "position" | "cash"
+        self.detail = detail
+
+    def __repr__(self) -> str:
+        return f"PositionCrossingWarning({self.kind}: {self.detail})"
 
 
 class TagCategory(models.Model):

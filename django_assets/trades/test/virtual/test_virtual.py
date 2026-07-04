@@ -52,9 +52,7 @@ def test_trigger_backstops_raw_orm(user, two_trades, aapl):
     a, _b = two_trades
     with pytest.raises(IntegrityError, match="alanc"), db_tx.atomic():
         transfer = VirtualTransfer.objects.create(user=user, timestamp=TS)
-        VirtualEntry.objects.create(
-            transfer=transfer, trade=a, instrument=aapl, amount=D("-100")
-        )
+        VirtualEntry.objects.create(transfer=transfer, trade=a, instrument=aapl, amount=D("-100"))
 
 
 def test_trigger_catches_one_sided_delete(user, two_trades, aapl):
@@ -76,12 +74,8 @@ def test_deferred_until_commit(user, two_trades, aapl):
     a, b = two_trades
     with db_tx.atomic():
         transfer = VirtualTransfer.objects.create(user=user, timestamp=TS)
-        VirtualEntry.objects.create(
-            transfer=transfer, trade=a, instrument=aapl, amount=D("-100")
-        )
-        VirtualEntry.objects.create(
-            transfer=transfer, trade=b, instrument=aapl, amount=D("100")
-        )
+        VirtualEntry.objects.create(transfer=transfer, trade=a, instrument=aapl, amount=D("-100"))
+        VirtualEntry.objects.create(transfer=transfer, trade=b, instrument=aapl, amount=D("100"))
     assert VirtualEntry.objects.count() == 2
 
 
@@ -116,7 +110,7 @@ def test_adr_0031_golden_scenario(user, accounts, usd):
     $9 → covered-call premium $120 + real $9.50 sale in B.
     A: −$50. B: +$170. Aggregate +$120 == ledger net cash. One unified
     number per trade — no separate virtual field."""
-    from django_assets.core.models import Account, Instrument
+    from django_assets.core.models import Instrument
     from django_assets.instruments.options import templates as opt
     from django_assets.instruments.options.models import Deliverable, OptionMeta
 
@@ -124,23 +118,37 @@ def test_adr_0031_golden_scenario(user, accounts, usd):
         code="XYZ", quantity_decimals=0, price_decimals=4, price_currency=usd
     )
     put = Instrument.objects.create(
-        code="XYZ P10", quantity_decimals=0, price_decimals=4,
-        multiplier=D("100"), price_currency=usd,
+        code="XYZ P10",
+        quantity_decimals=0,
+        price_decimals=4,
+        multiplier=D("100"),
+        price_currency=usd,
     )
     call = Instrument.objects.create(
-        code="XYZ C11", quantity_decimals=0, price_decimals=4,
-        multiplier=D("100"), price_currency=usd,
+        code="XYZ C11",
+        quantity_decimals=0,
+        price_decimals=4,
+        multiplier=D("100"),
+        price_currency=usd,
     )
     put_meta = OptionMeta.objects.create(
-        instrument=put, underlying=xyz, expiry=datetime.date(2026, 6, 18),
-        strike=D("10"), right="P",
+        instrument=put,
+        underlying=xyz,
+        expiry=datetime.date(2026, 6, 18),
+        strike=D("10"),
+        right="P",
     )
     OptionMeta.objects.create(
-        instrument=call, underlying=xyz, expiry=datetime.date(2026, 7, 17),
-        strike=D("11"), right="C",
+        instrument=call,
+        underlying=xyz,
+        expiry=datetime.date(2026, 7, 17),
+        strike=D("11"),
+        right="C",
     )
     Deliverable.objects.create(
-        option_meta=put_meta, instrument=xyz, quantity=D("100"),
+        option_meta=put_meta,
+        instrument=xyz,
+        quantity=D("100"),
         effective_from=datetime.date(2026, 1, 2),
     )
     routing = {**accounts}
@@ -150,7 +158,9 @@ def test_adr_0031_golden_scenario(user, accounts, usd):
         accounts=routing, instrument=put, contracts="1", price="0.50", timestamp=t0
     )
     assignment = opt.assign_option(
-        accounts=routing, instrument=put, contracts="1",
+        accounts=routing,
+        instrument=put,
+        contracts="1",
         timestamp=t0 + datetime.timedelta(days=10),
     )
     a = Trade.objects.create(user=user, name="put trade")
@@ -166,17 +176,25 @@ def test_adr_0031_golden_scenario(user, accounts, usd):
     assert event.warnings == []
 
     sell_call = opt.sell_option(
-        accounts=routing, instrument=call, contracts="1", price="1.20",
+        accounts=routing,
+        instrument=call,
+        contracts="1",
+        price="1.20",
         timestamp=t0 + datetime.timedelta(days=12),
     )
     expire = opt.expire_option(
-        accounts=routing, instrument=call, contracts="-1",
+        accounts=routing,
+        instrument=call,
+        contracts="-1",
         timestamp=t0 + datetime.timedelta(days=40),
     )
     from django_assets.instruments.equities import templates as eq
 
     sale = eq.sell_shares(
-        accounts=routing, instrument=xyz, quantity="100", price="9.50",
+        accounts=routing,
+        instrument=xyz,
+        quantity="100",
+        price="9.50",
         timestamp=t0 + datetime.timedelta(days=41),
     )
     b.assign(sell_call, quantity="1", instrument=call)
@@ -248,7 +266,11 @@ def test_conservation_property(user, two_trades, sale_tx, aapl):
     )
     for index, qty in enumerate(("100", "37.5", "250")):
         transfer_position(
-            a, b, instrument=aapl, quantity=qty, price="199.00",
+            a,
+            b,
+            instrument=aapl,
+            quantity=qty,
+            price="199.00",
             timestamp=LATER + datetime.timedelta(hours=index),
         )
     assert a.net_position(aapl) + b.net_position(aapl) == total_position
@@ -262,9 +284,7 @@ def test_conservation_property(user, two_trades, sale_tx, aapl):
 def test_check_consistency_retroactive_crossing(user, two_trades, sale_tx, aapl):
     a, b = two_trades
     a.assign(sale_tx, quantity="200", instrument=aapl)
-    transfer_position(
-        a, b, instrument=aapl, quantity="150", price="200.00", timestamp=LATER
-    )
+    transfer_position(a, b, instrument=aapl, quantity="150", price="200.00", timestamp=LATER)
     assert a.check_consistency() == {"errors": [], "warnings": []}
     a.unassign(sale_tx)  # retroactively the transfer over-draws
     report = a.check_consistency()

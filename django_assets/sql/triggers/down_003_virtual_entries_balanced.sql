@@ -1,0 +1,1 @@
+DROP TRIGGER IF EXISTS virtual_entries_balanced ON django_assets_virtualentry;
