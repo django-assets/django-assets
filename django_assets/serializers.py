@@ -19,6 +19,7 @@ except ImportError as exc:  # pragma: no cover — exercised via subprocess test
 
 from django_assets.brokerage.models import (
     AccountProfile,
+    DisclosureEvent,
     ImportBatch,
     ImportLine,
     ImportLineProposal,
@@ -351,4 +352,18 @@ class ImportLineProposalSerializer(serializers.ModelSerializer[ImportLineProposa
             "created_at",
             "resolved_at",
             "resolution",
+        ]
+
+
+class DisclosureEventSerializer(serializers.ModelSerializer[DisclosureEvent]):
+    class Meta:
+        model = DisclosureEvent
+        fields = [
+            "id",
+            "transaction",
+            "source",
+            "source_reference",
+            "disclosed_at",
+            "effective_date",
+            "note",
         ]
