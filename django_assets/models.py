@@ -6,6 +6,7 @@ models module and re-exports here.
 
 from django_assets.brokerage.models import (
     AccountProfile,
+    DisclosureEvent,
     ImportBatch,
     ImportLine,
     ImportLineProposal,
@@ -30,6 +31,7 @@ __all__ = [
     "AccountProfile",
     "CorporateAction",
     "CryptoMeta",
+    "DisclosureEvent",
     "CurrencyMeta",
     "Deliverable",
     "EquityMeta",

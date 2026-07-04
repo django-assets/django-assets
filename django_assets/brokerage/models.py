@@ -210,6 +210,37 @@ class ImportLineProposal(models.Model):
         return f"proposal line={self.line_id} tx={self.candidate_transaction_id} r{self.rank}"
 
 
+class DisclosureEvent(models.Model):
+    """One application of externally-disclosed information to a
+    Transaction (ADR-0023). Records WHERE the new information came from
+    and WHAT the transaction looked like immediately before — the
+    snapshot makes every prior state, including the as-imported
+    original, reconstructible. Not a diff: each event is independently
+    sufficient."""
+
+    transaction = models.ForeignKey(
+        Transaction, related_name="disclosure_events", on_delete=models.CASCADE
+    )
+    source = models.CharField(max_length=100)
+    """Recommended vocabulary: adr_advice, k1_schedule, 1099_div,
+    1099_b_corrected, fund_yearend_character, broker_reconciliation,
+    manual_correction. Open CharField; hosts extend by convention."""
+
+    source_reference = models.CharField(max_length=200, blank=True)
+    disclosed_at = models.DateTimeField(auto_now_add=True)
+    effective_date = models.DateField(null=True, blank=True)
+    snapshot_before = models.JSONField()
+    note = models.TextField(blank=True)
+
+    objects: ClassVar[models.Manager["DisclosureEvent"]] = models.Manager()
+
+    class Meta:
+        ordering = ["disclosed_at", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.source} on tx {self.transaction_id}"
+
+
 def guard_reconciliation_flag(
     sender: type[AccountProfile], instance: AccountProfile, **kwargs: Any
 ) -> None:

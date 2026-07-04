@@ -5,7 +5,6 @@ Import $100 dividend → ADR advice ($115 gross / $14 ADR fee / $1 tax)
 throughout; every prior state is one snapshot away.
 """
 
-import datetime
 from decimal import Decimal
 
 import pytest
@@ -23,13 +22,7 @@ from django_assets.brokerage.disclosure import (
 )
 from django_assets.brokerage.exceptions import ReconciledLegLocked
 from django_assets.brokerage.models import DisclosureEvent, ImportBatch, ImportLine
-from django_assets.brokerage.test.imports.conftest import TS  # noqa: F401
-from django_assets.brokerage.test.imports.conftest import (  # noqa: F401
-    aapl,
-    accounts,
-    usd,
-    user,
-)
+from django_assets.brokerage.test.imports.conftest import TS
 from django_assets.instruments.equities import templates
 
 pytestmark = pytest.mark.ledger
@@ -38,7 +31,7 @@ D = Decimal
 
 
 @pytest.fixture
-def imported_dividend(accounts, usd, aapl):  # noqa: F811
+def imported_dividend(accounts, usd, aapl):
     """Phase 1: the broker CSV said 'dividend $100'; the cash leg is
     reconciled (locked)."""
     tx = templates.dividend_received(
@@ -56,14 +49,15 @@ def imported_dividend(accounts, usd, aapl):  # noqa: F811
     return tx
 
 
-def adr_advice_edits(tx, accounts):
+def adr_advice_edits(tx, account_map):
     """$115 gross, $14 ADR fee, $1 tax — net $100 unchanged."""
-    external_leg = tx.legs.get(account=accounts["external"])
+    external_leg = tx.legs.get(account=account_map["external"])
+    usd_instrument = external_leg.instrument
     return DisclosureEdits(
         revised=[LegEdit(leg=external_leg, amount="-115.00")],
         added=[
-            NewLeg(account=accounts["adr_fees"], instrument_code="USD", amount="14.00"),
-            NewLeg(account=accounts["tax_withheld"], instrument_code="USD", amount="1.00"),
+            NewLeg(account=account_map["adr_fees"], instrument=usd_instrument, amount="14.00"),
+            NewLeg(account=account_map["tax_withheld"], instrument=usd_instrument, amount="1.00"),
         ],
     )
 
@@ -97,9 +91,7 @@ def test_three_phase_dividend(imported_dividend, accounts, usd):
         source="1099_div",
         reference="1099-DIV 2026",
         edits=DisclosureEdits(
-            revised=[
-                LegEdit(leg=tax_leg, description="nonresident withholding, box 7")
-            ]
+            revised=[LegEdit(leg=tax_leg, description="nonresident withholding, box 7")]
         ),
     )
     # (b) Each phase's snapshot reconstructs the prior state exactly.
@@ -126,7 +118,8 @@ def test_locked_leg_in_edits_raises(imported_dividend, accounts):
 
 
 def test_unbalanced_edits_rejected_at_commit(imported_dividend, accounts):
-    from django.db import IntegrityError, transaction as db_tx
+    from django.db import IntegrityError
+    from django.db import transaction as db_tx
 
     tx = imported_dividend
     external_leg = tx.legs.get(account=accounts["external"])
@@ -150,7 +143,13 @@ def test_helper_works_on_manual_transactions(accounts, usd, aapl):
         note="was actually 55 gross w/ 5 fee",
         edits=DisclosureEdits(
             revised=[LegEdit(leg=external_leg, amount="-55.00")],
-            added=[NewLeg(account=accounts["adr_fees"], instrument_code="USD", amount="5.00")],
+            added=[
+                NewLeg(
+                    account=accounts["adr_fees"],
+                    instrument=external_leg.instrument,
+                    amount="5.00",
+                )
+            ],
         ),
     )
     assert event.transaction == tx
@@ -183,9 +182,7 @@ def test_removed_leg_ids(imported_dividend, accounts):
 def test_reconstruction_surfaces(imported_dividend, accounts, usd, client):
     tx = imported_dividend
     as_imported = snapshot_transaction(tx)
-    apply_disclosure(
-        tx, source="adr_advice", edits=adr_advice_edits(tx, accounts)
-    )
+    apply_disclosure(tx, source="adr_advice", edits=adr_advice_edits(tx, accounts))
     event = tx.disclosure_events.get()
 
     # DRF endpoints return TransactionSerializer-shaped payloads that
@@ -211,9 +208,7 @@ def test_reconstruction_surfaces(imported_dividend, accounts, usd, client):
     # Admin pages render structured records, never raw JSON.
     admin_user = get_user_model().objects.create_superuser(username="admin", password="x")
     client.force_login(admin_user)
-    page = client.get(
-        reverse("admin:django_assets_disclosure_before", args=[event.pk])
-    )
+    page = client.get(reverse("admin:django_assets_disclosure_before", args=[event.pk]))
     assert page.status_code == 200
     body = page.content.decode()
     assert "-100.00" in body and "<table" in body

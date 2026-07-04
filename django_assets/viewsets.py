@@ -17,7 +17,7 @@ except ImportError as exc:  # pragma: no cover — same posture as serializers
 
 from typing import Any
 
-from django_assets.brokerage.models import ImportLine
+from django_assets.brokerage.models import DisclosureEvent, ImportLine
 from django_assets.brokerage.reconciliation import match_line, unmatch_line
 from django_assets.brokerage.schemas import registry
 from django_assets.core.models import (
@@ -32,6 +32,7 @@ from django_assets.instruments.options.models import OptionMeta
 from django_assets.serializers import (
     AccountSerializer,
     CorporateActionSerializer,
+    DisclosureEventSerializer,
     ExchangeSerializer,
     IdentifierSerializer,
     ImportLineProposalSerializer,
@@ -217,3 +218,30 @@ class ImportLineViewSet(viewsets.ReadOnlyModelViewSet[ImportLine]):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"resolution": "confirmed"})
+
+
+class TransactionViewSet(viewsets.ReadOnlyModelViewSet):  # type: ignore[type-arg]
+    """Read-only transactions + the ADR-0023 reconstruction endpoint."""
+
+    from django_assets.core.models import Transaction as _Transaction
+    from django_assets.serializers import TransactionSerializer as _TransactionSerializer
+
+    queryset = _Transaction.objects.all().order_by("timestamp", "id")
+    serializer_class = _TransactionSerializer
+
+    @action(detail=True, methods=["get"])
+    def original(self, request: Any, pk: Any = None) -> Any:
+        from django_assets.brokerage.disclosure import reconstruct_original
+
+        return Response(reconstruct_original(self.get_object()))
+
+
+class DisclosureEventViewSet(viewsets.ReadOnlyModelViewSet[DisclosureEvent]):
+    queryset = DisclosureEvent.objects.select_related("transaction")
+    serializer_class = DisclosureEventSerializer
+
+    @action(detail=True, methods=["get"])
+    def before(self, request: Any, pk: Any = None) -> Any:
+        from django_assets.brokerage.disclosure import reconstruct_before
+
+        return Response(reconstruct_before(self.get_object()))

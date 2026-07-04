@@ -3,6 +3,7 @@ register here (mirrors models.py)."""
 
 from django_assets.brokerage.admin import (
     AccountProfileAdmin,
+    DisclosureEventAdmin,
     ImportBatchAdmin,
     ImportLineAdmin,
     ImportLineProposalAdmin,
@@ -30,6 +31,7 @@ __all__ = [
     "CorporateActionAdmin",
     "CryptoMetaAdmin",
     "CurrencyMetaAdmin",
+    "DisclosureEventAdmin",
     "EquityMetaAdmin",
     "ExchangeAdmin",
     "IdentifierAdmin",

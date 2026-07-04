@@ -6,6 +6,7 @@ from django.urls import path
 
 from django_assets.brokerage.models import (
     AccountProfile,
+    DisclosureEvent,
     ImportBatch,
     ImportLine,
     ImportLineProposal,
@@ -145,3 +146,60 @@ class ImportLineProposalAdmin(admin.ModelAdmin):
     )
     list_filter = ("resolution", "compound_kind")
     readonly_fields = ("score_breakdown", "proposal_group", "created_at", "resolved_at")
+
+
+def _render_snapshot(title: str, snapshot: dict) -> HttpResponse:
+    """Structured reconstruction view — a record, never a JSON dump."""
+    rows = "".join(
+        f"<tr><td>{leg['account_name']}</td><td>{leg['instrument_code']}</td>"
+        f"<td>{leg['amount']}</td><td>{leg['description']}</td></tr>"
+        for leg in snapshot["legs"]
+    )
+    return HttpResponse(
+        f"<h1>{title}</h1>"
+        f"<p>{snapshot['description']} — {snapshot['timestamp']} "
+        f"(origin: {snapshot['origin']})</p>"
+        f"<table><tr><th>account</th><th>instrument</th><th>amount</th>"
+        f"<th>description</th></tr>{rows}</table>"
+    )
+
+
+def disclosure_before_view(request, event_id):
+    from django_assets.brokerage.disclosure import reconstruct_before
+
+    event = DisclosureEvent.objects.get(pk=event_id)
+    return _render_snapshot(
+        f"Before {event.source} ({event.disclosed_at:%Y-%m-%d})",
+        reconstruct_before(event),
+    )
+
+
+def transaction_original_view(request, transaction_id):
+    from django_assets.brokerage.disclosure import reconstruct_original
+    from django_assets.core.models import Transaction
+
+    tx = Transaction.objects.get(pk=transaction_id)
+    return _render_snapshot("As imported", reconstruct_original(tx))
+
+
+@admin.register(DisclosureEvent)
+class DisclosureEventAdmin(admin.ModelAdmin):
+    list_display = ("transaction", "source", "source_reference", "disclosed_at", "effective_date")
+    list_filter = ("source",)
+    date_hierarchy = "disclosed_at"
+    readonly_fields = ("snapshot_before", "disclosed_at")
+
+    def get_urls(self):
+        custom = [
+            path(
+                "<int:event_id>/before/",
+                self.admin_site.admin_view(disclosure_before_view),
+                name="django_assets_disclosure_before",
+            ),
+            path(
+                "transaction/<int:transaction_id>/original/",
+                self.admin_site.admin_view(transaction_original_view),
+                name="django_assets_transaction_original",
+            ),
+        ]
+        return custom + super().get_urls()
