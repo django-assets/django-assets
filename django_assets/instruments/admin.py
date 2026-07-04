@@ -6,6 +6,7 @@ from django_assets.instruments.crypto.models import CryptoMeta
 from django_assets.instruments.currencies.models import CurrencyMeta
 from django_assets.instruments.equities.models import EquityMeta
 from django_assets.instruments.models import CorporateAction
+from django_assets.instruments.options.models import Deliverable, OptionMeta
 
 
 @admin.register(CorporateAction)
@@ -35,3 +36,17 @@ class EquityMetaAdmin(admin.ModelAdmin):
     list_display = ("instrument", "primary_exchange")
     list_filter = ("primary_exchange",)
     search_fields = ("instrument__code",)
+
+
+class DeliverableInline(admin.TabularInline):
+    model = Deliverable
+    extra = 0
+
+
+@admin.register(OptionMeta)
+class OptionMetaAdmin(admin.ModelAdmin):
+    list_display = ("instrument", "underlying", "expiry", "strike", "right")
+    list_filter = ("right", "settlement_type", "exercise_style")
+    date_hierarchy = "expiry"
+    search_fields = ("instrument__code", "underlying__code")
+    inlines = [DeliverableInline]

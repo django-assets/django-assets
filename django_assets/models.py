@@ -16,16 +16,19 @@ from django_assets.instruments.crypto.models import CryptoMeta
 from django_assets.instruments.currencies.models import CurrencyMeta
 from django_assets.instruments.equities.models import EquityMeta
 from django_assets.instruments.models import CorporateAction
+from django_assets.instruments.options.models import Deliverable, OptionMeta
 
 __all__ = [
     "Account",
     "CorporateAction",
     "CryptoMeta",
     "CurrencyMeta",
+    "Deliverable",
     "EquityMeta",
     "Exchange",
     "Identifier",
     "Instrument",
+    "OptionMeta",
     "Transaction",
     "TransactionLeg",
 ]

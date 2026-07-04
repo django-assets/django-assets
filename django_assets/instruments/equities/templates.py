@@ -18,64 +18,14 @@ from django_assets.instruments import tags
 from django_assets.instruments.base import (
     cash_currency,
     check_capability,
-    principal_amount,
     routed,
+)
+from django_assets.instruments.base import (
+    share_trade as _share_trade,
 )
 
 Amount = Decimal | int | str
 AccountMap = dict[str, Account]
-
-
-def _share_trade(
-    *,
-    accounts: AccountMap,
-    instrument: Instrument,
-    quantity: Amount,
-    price: Amount,
-    side: int,  # +1 = shares in (buy/cover), -1 = shares out (sell/short)
-    commission: Amount = 0,
-    regulatory_fee: Amount = 0,
-    principal: Amount | None = None,
-    currency: Instrument | None = None,
-    timestamp: datetime.datetime,
-    trade_timestamp: datetime.datetime | None = None,
-    description: str = "",
-    origin: str = "manual",
-    metadata: dict[str, Any] | None = None,
-) -> Transaction:
-    ccy = cash_currency(instrument, currency)
-    qty = to_decimal(quantity, param="quantity")
-    gross = principal_amount(ccy, qty, price, instrument.multiplier, principal)
-    fee_commission = to_decimal(commission, param="commission")
-    fee_regulatory = to_decimal(regulatory_fee, param="regulatory_fee")
-    # Net cash from the user's perspective: buys pay principal + fees,
-    # sells receive principal − fees (HIMS shape).
-    net_cash = -side * gross - fee_commission - fee_regulatory
-
-    with TransactionBuilder(
-        account=routed(accounts, "cash"),
-        timestamp=timestamp,
-        trade_timestamp=trade_timestamp,
-        description=description,
-        origin=origin,
-        metadata=metadata,
-    ) as b:
-        b.add_leg(account=routed(accounts, "holdings"), instrument=instrument, amount=side * qty)
-        b.add_leg(account=routed(accounts, "external"), instrument=instrument, amount=-side * qty)
-        b.add_leg(account=routed(accounts, "cash"), instrument=ccy, amount=net_cash)
-        if fee_commission:
-            b.add_leg(
-                account=routed(accounts, "commissions"), instrument=ccy, amount=fee_commission
-            )
-        if fee_regulatory:
-            b.add_leg(
-                account=routed(accounts, "regulatory_fees"),
-                instrument=ccy,
-                amount=fee_regulatory,
-            )
-        b.add_leg(account=routed(accounts, "external"), instrument=ccy, amount=side * gross)
-    assert b.transaction is not None
-    return b.transaction
 
 
 def buy_shares(**kwargs: Any) -> Transaction:
