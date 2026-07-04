@@ -1,5 +1,6 @@
 """System checks: PostgreSQL-only, version floor (ADR-0001/0002)."""
 
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 from django.apps import AppConfig
@@ -33,12 +34,11 @@ def _check_connection(alias: str, connection: Any) -> list[Error]:
 
 @register("database")
 def database_backend_check(
-    app_configs: list[AppConfig] | None,
-    databases: list[str] | None = None,
-    **kwargs: Any,
+    app_configs: Sequence[AppConfig] | None, **kwargs: Any
 ) -> list[Error]:
     """Runs with database checks (migrate, `check --database`)."""
+    databases: Iterable[str] = kwargs.get("databases") or []
     errors: list[Error] = []
-    for alias in databases or []:
+    for alias in databases:
         errors.extend(_check_connection(alias, connections[alias]))
     return errors
