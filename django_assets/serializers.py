@@ -40,6 +40,14 @@ from django_assets.instruments.currencies.models import CurrencyMeta
 from django_assets.instruments.equities.models import EquityMeta
 from django_assets.instruments.models import CorporateAction
 from django_assets.instruments.options.models import Deliverable, OptionMeta
+from django_assets.trades.models import (
+    Tag,
+    TagCategory,
+    Trade,
+    TradeAllocation,
+    VirtualEntry,
+    VirtualTransfer,
+)
 
 try:
     from drf_spectacular.utils import extend_schema_field
@@ -367,3 +375,75 @@ class DisclosureEventSerializer(serializers.ModelSerializer[DisclosureEvent]):
             "effective_date",
             "note",
         ]
+
+
+class TagSerializer(serializers.ModelSerializer[Tag]):
+    class Meta:
+        model = Tag
+        fields = ["id", "category", "name", "description"]
+
+
+class TagCategorySerializer(serializers.ModelSerializer[TagCategory]):
+    tags = TagSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = TagCategory
+        fields = ["id", "user", "code", "name", "description", "tags"]
+
+
+class TradeAllocationSerializer(serializers.ModelSerializer[TradeAllocation]):
+    class Meta:
+        model = TradeAllocation
+        fields = ["id", "trade", "leg", "amount", "category", "metadata"]
+
+
+class TradeSerializer(serializers.ModelSerializer[Trade]):
+    """Derived fields are read-only; P&L is ONE unified number
+    (ADR-0031 — no separate virtual component is exposed)."""
+
+    tags = serializers.SerializerMethodField()
+    children: "serializers.PrimaryKeyRelatedField[Any]" = serializers.PrimaryKeyRelatedField(
+        many=True, read_only=True
+    )
+    status = serializers.SerializerMethodField()
+    realized_pnl = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Trade
+        fields = [
+            "id",
+            "user",
+            "name",
+            "parent",
+            "children",
+            "description",
+            "metadata",
+            "created_at",
+            "tags",
+            "status",
+            "realized_pnl",
+        ]
+
+    def get_tags(self, obj: Trade) -> dict[str, list[str]]:
+        return obj.get_tags_by_category()
+
+    def get_status(self, obj: Trade) -> str:
+        return obj.status
+
+    def get_realized_pnl(self, obj: Trade) -> str:
+        return str(obj.calculate_pnl()["realized_pnl"])
+
+
+class VirtualEntrySerializer(serializers.ModelSerializer[VirtualEntry]):
+    class Meta:
+        model = VirtualEntry
+        fields = ["id", "transfer", "trade", "instrument", "amount", "category", "metadata"]
+        read_only_fields = ["transfer"]
+
+
+class VirtualTransferSerializer(serializers.ModelSerializer[VirtualTransfer]):
+    entries = VirtualEntrySerializer(many=True, read_only=True)
+
+    class Meta:
+        model = VirtualTransfer
+        fields = ["id", "user", "timestamp", "description", "metadata", "entries"]

@@ -24,6 +24,13 @@ from django_assets.instruments.admin import (
     EquityMetaAdmin,
     OptionMetaAdmin,
 )
+from django_assets.trades.admin import (
+    TagAdmin,
+    TagCategoryAdmin,
+    TradeAdmin,
+    TradeAllocationAdmin,
+    VirtualTransferAdmin,
+)
 
 __all__ = [
     "AccountAdmin",
@@ -40,7 +47,12 @@ __all__ = [
     "ImportLineProposalAdmin",
     "InstrumentAdmin",
     "OptionMetaAdmin",
+    "TagAdmin",
+    "TagCategoryAdmin",
+    "TradeAdmin",
+    "TradeAllocationAdmin",
     "TransactionAdmin",
     "TransactionImportAdmin",
+    "VirtualTransferAdmin",
     "TransactionLegAdmin",
 ]

@@ -39,7 +39,10 @@ from django_assets.serializers import (
     ImportLineSerializer,
     InstrumentSerializer,
     OptionMetaSerializer,
+    TradeSerializer,
+    VirtualTransferSerializer,
 )
+from django_assets.trades.models import Trade, VirtualTransfer
 
 
 class ExchangeViewSet(viewsets.ReadOnlyModelViewSet[Exchange]):
@@ -245,3 +248,95 @@ class DisclosureEventViewSet(viewsets.ReadOnlyModelViewSet[DisclosureEvent]):
         from django_assets.brokerage.disclosure import reconstruct_before
 
         return Response(reconstruct_before(self.get_object()))
+
+
+class TradeViewSet(viewsets.ReadOnlyModelViewSet[Trade]):
+    """Trades queue + mutation actions (spec §7): rule violations come
+    back as 400s, never 500s. Hosts mount URLs and own auth (D-18)."""
+
+    queryset = Trade.objects.all().order_by("pk")
+    serializer_class = TradeSerializer
+
+    @action(detail=True, methods=["post"])
+    def assign(self, request: Any, pk: Any = None) -> Any:
+        from django_assets.core.models import Instrument as CoreInstrument
+        from django_assets.core.models import Transaction as CoreTransaction
+        from django_assets.trades.exceptions import OverAllocationError
+
+        trade = self.get_object()
+        try:
+            transaction = CoreTransaction.objects.get(
+                pk=request.data.get("transaction"), account__owner=trade.user
+            )
+            kwargs: dict[str, Any] = {}
+            if request.data.get("fraction"):
+                kwargs["fraction"] = request.data["fraction"]
+            else:
+                kwargs["quantity"] = request.data.get("quantity")
+                kwargs["instrument"] = CoreInstrument.objects.get(pk=request.data.get("instrument"))
+            allocations = trade.assign(transaction, **kwargs)
+        except (OverAllocationError, ValueError, TypeError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"allocations": [allocation.pk for allocation in allocations]})
+
+    @action(detail=True, methods=["post"])
+    def unassign(self, request: Any, pk: Any = None) -> Any:
+        from django_assets.core.models import Transaction as CoreTransaction
+
+        trade = self.get_object()
+        transaction = CoreTransaction.objects.get(
+            pk=request.data.get("transaction"), account__owner=trade.user
+        )
+        return Response({"removed": trade.unassign(transaction)})
+
+    @action(detail=True, methods=["post"])
+    def reallocate(self, request: Any, pk: Any = None) -> Any:
+        from django_assets.core.models import TransactionLeg as CoreLeg
+        from django_assets.trades.exceptions import OverAllocationError
+
+        trade = self.get_object()
+        leg = CoreLeg.objects.get(pk=request.data.get("leg"), account__owner=trade.user)
+        try:
+            allocation = trade.reallocate(
+                leg, request.data.get("amount"), category=request.data.get("category", "")
+            )
+        except (OverAllocationError, ValueError, TypeError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"allocation": allocation.pk})
+
+    @action(detail=True, methods=["post"], url_path="transfer-position")
+    def transfer_position(self, request: Any, pk: Any = None) -> Any:
+        from django.utils.dateparse import parse_datetime
+
+        from django_assets.core.models import Instrument as CoreInstrument
+        from django_assets.trades.exceptions import UnbalancedVirtualTransferError
+        from django_assets.trades.virtual import transfer_position as do_transfer
+
+        trade = self.get_object()
+        try:
+            to_trade = Trade.objects.get(pk=request.data.get("to_trade"), user=trade.user)
+            instrument = CoreInstrument.objects.get(pk=request.data.get("instrument"))
+            timestamp = parse_datetime(str(request.data.get("timestamp")))
+            if timestamp is None:
+                raise ValueError("timestamp must be an ISO-8601 datetime")
+            transfer = do_transfer(
+                trade,
+                to_trade,
+                instrument=instrument,
+                quantity=request.data.get("quantity"),
+                price=request.data.get("price"),
+                timestamp=timestamp,
+            )
+        except (UnbalancedVirtualTransferError, ValueError, TypeError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "transfer": transfer.pk,
+                "warnings": [str(warning) for warning in transfer.warnings],
+            }
+        )
+
+
+class VirtualTransferViewSet(viewsets.ReadOnlyModelViewSet[VirtualTransfer]):
+    queryset = VirtualTransfer.objects.prefetch_related("entries")
+    serializer_class = VirtualTransferSerializer

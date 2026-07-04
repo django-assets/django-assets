@@ -95,3 +95,4 @@ class TransactionAdmin(admin.ModelAdmin):
 class TransactionLegAdmin(admin.ModelAdmin):
     list_display = ("transaction", "account", "instrument", "amount")
     list_filter = ("instrument",)
+    search_fields = ("transaction__description", "account__name", "instrument__code")
