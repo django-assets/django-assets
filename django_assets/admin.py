@@ -9,9 +9,17 @@ from django_assets.core.admin import (
     TransactionAdmin,
     TransactionLegAdmin,
 )
+from django_assets.instruments.admin import (
+    CorporateActionAdmin,
+    CryptoMetaAdmin,
+    CurrencyMetaAdmin,
+)
 
 __all__ = [
     "AccountAdmin",
+    "CorporateActionAdmin",
+    "CryptoMetaAdmin",
+    "CurrencyMetaAdmin",
     "ExchangeAdmin",
     "IdentifierAdmin",
     "InstrumentAdmin",
