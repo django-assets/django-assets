@@ -63,8 +63,7 @@ def schema_registry_view(request):
     untrusted text here."""
     rows = format_html_join(
         "",
-        "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td>"
-        "<td><code>{}</code></td></tr>",
+        "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td><code>{}</code></td></tr>",
         (
             (
                 broker,
