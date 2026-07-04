@@ -1,5 +1,5 @@
 from django.apps import AppConfig
-from django.db.models.signals import post_migrate
+from django.db.models.signals import post_migrate, pre_save
 
 
 class DjangoAssetsConfig(AppConfig):
@@ -27,6 +27,14 @@ class DjangoAssetsConfig(AppConfig):
         else:
             post_migrate.disconnect(sender=self, dispatch_uid="django_assets.install_ddl")
         # 2. System checks (PostgreSQL backend + version floor).
+        # 3. AccountProfile reconciliation-flag guard (ADR-0014, spec §2).
+        from django_assets.brokerage.models import AccountProfile, guard_reconciliation_flag
         from django_assets.core import checks  # noqa: F401  (registers on import)
-        # 3. Import-schema autodiscovery (ADR-0027) — brokerage B4.
-        # 4. Reconciliation signal handlers (ADR-0024) — brokerage B6.
+
+        pre_save.connect(
+            guard_reconciliation_flag,
+            sender=AccountProfile,
+            dispatch_uid="django_assets.guard_reconciliation_flag",
+        )
+        # 4. Import-schema autodiscovery (ADR-0027) — brokerage B4.
+        # 5. Reconciliation signal handlers (ADR-0024) — brokerage B6.
