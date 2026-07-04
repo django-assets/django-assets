@@ -64,7 +64,13 @@ def unmatched_lines(account: Account | None = None) -> "QuerySet[ImportLine]":
 def match_line(line: ImportLine, legs: list[TransactionLeg]) -> None:
     """Manual/dedup match (ADR-0024 Path 2). Eligibility enforced: every
     leg's account must pass account_allows_reconciliation (D-10)."""
+    owner_id = line.batch.account.owner_id
     for leg in legs:
+        if leg.account.owner_id != owner_id:
+            raise ValueError(
+                f"leg {leg.pk} belongs to a different owner than the import "
+                f"batch's account — matching never crosses owner boundaries"
+            )
         if not account_allows_reconciliation(leg.account):
             raise ValueError(
                 f"leg {leg.pk} is on {leg.account.name!r}, which has no "
