@@ -42,8 +42,7 @@ def ensure_standard_accounts(
     # to the dev project's concrete User, but this is host-generic API.
     owner = cast(Any, user)
     return {
-        key: Account.objects.get_or_create(owner=owner, name=name)[0]
-        for key, name in names.items()
+        key: Account.objects.get_or_create(owner=owner, name=name)[0] for key, name in names.items()
     }
 
 
