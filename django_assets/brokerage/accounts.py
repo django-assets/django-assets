@@ -7,6 +7,8 @@ balances answer report questions directly:
 Holding.current(accounts["commissions"], usd) is lifetime commissions.
 """
 
+from typing import Any, cast
+
 from django.contrib.auth.base_user import AbstractBaseUser
 
 from django_assets.brokerage.models import AccountProfile
@@ -36,8 +38,12 @@ def ensure_standard_accounts(
     is the templates' `accounts=` argument.
     """
     names = {**DEFAULT_ACCOUNT_NAMES, **(naming or {})}
+    # cast: the FK targets settings.AUTH_USER_MODEL — the stubs resolve it
+    # to the dev project's concrete User, but this is host-generic API.
+    owner = cast(Any, user)
     return {
-        key: Account.objects.get_or_create(owner=user, name=name)[0] for key, name in names.items()
+        key: Account.objects.get_or_create(owner=owner, name=name)[0]
+        for key, name in names.items()
     }
 
 
