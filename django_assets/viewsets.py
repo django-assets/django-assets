@@ -114,7 +114,15 @@ class ImportLineViewSet(viewsets.ReadOnlyModelViewSet[ImportLine]):
     @action(detail=True, methods=["post"])
     def match(self, request: Any, pk: Any = None) -> Any:
         line = self.get_object()
-        legs = list(TransactionLeg.objects.filter(pk__in=self._leg_ids(request)))
+        # Owner-scoped lookup: pks outside the batch owner's books 404
+        # here rather than leak into match_line (IDOR hygiene on top of
+        # the helper's own owner guard).
+        legs = list(
+            TransactionLeg.objects.filter(
+                pk__in=self._leg_ids(request),
+                account__owner=line.batch.account.owner,
+            )
+        )
         try:
             match_line(line, legs)
         except ValueError as exc:
@@ -180,9 +188,19 @@ class ImportLineViewSet(viewsets.ReadOnlyModelViewSet[ImportLine]):
         from django_assets.brokerage.review import override_match
         from django_assets.core.models import Transaction as CoreTransaction
 
-        target = CoreTransaction.objects.get(pk=request.data.get("transaction"))
+        line = self.get_object()
+        # Override is cross-account/day/batch by design (ADR-0029) but
+        # never cross-OWNER: scope the lookup to the batch owner's books.
+        target = (
+            CoreTransaction.objects.filter(
+                pk=request.data.get("transaction"),
+                account__owner=line.batch.account.owner,
+            )
+            .distinct()
+            .get()
+        )
         try:
-            override_match(self.get_object(), target)
+            override_match(line, target)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"resolution": "confirmed"})
