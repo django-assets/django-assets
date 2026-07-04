@@ -232,23 +232,31 @@ def test_multi_destination_event(user, aapl):
 
 
 def test_conservation_property(user, two_trades, sale_tx, aapl):
-    """Random balanced transfers never change Σ positions or Σ realized."""
+    """Balanced transfers never change Σ positions or Σ TOTAL P&L at a
+    common mark — virtual events reallocate P&L between trades (realized
+    may crystallize in one and offset in the other's basis) but can
+    never create or destroy it."""
+    from django_assets.core.prices import StaticPriceSource
+
+    source = StaticPriceSource({aapl: "195.00"})
     a, b = two_trades
     a.assign(sale_tx, quantity="1000", instrument=aapl)
-    total_before = a.net_position(aapl) + b.net_position(aapl)
-    realized_before = (
-        a.calculate_pnl()["realized_pnl"] + b.calculate_pnl()["realized_pnl"]
+    total_position = a.net_position(aapl) + b.net_position(aapl)
+    total_before = (
+        a.calculate_pnl(price_source=source)["total_pnl"]
+        + b.calculate_pnl(price_source=source)["total_pnl"]
     )
     for index, qty in enumerate(("100", "37.5", "250")):
         transfer_position(
             a, b, instrument=aapl, quantity=qty, price="199.00",
             timestamp=LATER + datetime.timedelta(hours=index),
         )
-    assert a.net_position(aapl) + b.net_position(aapl) == total_before
-    realized_after = (
-        a.calculate_pnl()["realized_pnl"] + b.calculate_pnl()["realized_pnl"]
+    assert a.net_position(aapl) + b.net_position(aapl) == total_position
+    total_after = (
+        a.calculate_pnl(price_source=source)["total_pnl"]
+        + b.calculate_pnl(price_source=source)["total_pnl"]
     )
-    assert realized_after == realized_before
+    assert total_after == total_before
 
 
 def test_check_consistency_retroactive_crossing(user, two_trades, sale_tx, aapl):
