@@ -4,6 +4,7 @@ Django discovers models via <app>.models; each sub-package keeps its own
 models module and re-exports here.
 """
 
+from django_assets.brokerage.models import AccountProfile
 from django_assets.core.models import (
     Account,
     Exchange,
@@ -20,6 +21,7 @@ from django_assets.instruments.options.models import Deliverable, OptionMeta
 
 __all__ = [
     "Account",
+    "AccountProfile",
     "CorporateAction",
     "CryptoMeta",
     "CurrencyMeta",

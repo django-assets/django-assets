@@ -1,6 +1,7 @@
 """Admin aggregator: Django autodiscovers <app>.admin; sub-packages
 register here (mirrors models.py)."""
 
+from django_assets.brokerage.admin import AccountProfileAdmin
 from django_assets.core.admin import (
     AccountAdmin,
     ExchangeAdmin,
@@ -19,6 +20,7 @@ from django_assets.instruments.admin import (
 
 __all__ = [
     "AccountAdmin",
+    "AccountProfileAdmin",
     "CorporateActionAdmin",
     "CryptoMetaAdmin",
     "CurrencyMetaAdmin",
