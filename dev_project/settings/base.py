@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django_assets",
+    "dev_project.hostapp",
 ]
 
 MIDDLEWARE = [

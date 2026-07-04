@@ -18,7 +18,9 @@ def test_builtin_schwab_schema_registered():
 def test_duplicate_registration_refused():
     with pytest.raises(ImproperlyConfigured, match="already registered"):
 
-        @register_schema(broker="schwab", document_kind="trades", format_kind="csv", version="2026.1")
+        @register_schema(
+            broker="schwab", document_kind="trades", format_kind="csv", version="2026.1"
+        )
         class Duplicate(ImportSchema):
             pass
 

@@ -73,9 +73,7 @@ def test_invariant_no_eligible_leg_outside_matched(batch, accounts, usd, aapl):
     """ADR-0029 invariant: every eligible leg of an import-origin
     Transaction is in matched_legs after process_batch."""
     process_batch(batch, SCHWAB_CSV)
-    matched_ids = set(
-        ImportLine.objects.filter(batch=batch).values_list("matched_legs", flat=True)
-    )
+    matched_ids = set(ImportLine.objects.filter(batch=batch).values_list("matched_legs", flat=True))
     for tx in Transaction.objects.filter(origin="import"):
         for leg in tx.legs.select_related("account"):
             if leg.account.name in {"brokerage_cash", "brokerage_holdings"}:

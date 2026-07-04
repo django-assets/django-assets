@@ -29,8 +29,11 @@ def test_period_discipline(batch, accounts):
     """Worked example 1: skip a statement whose period is already in."""
     assert is_period_imported(accounts["cash"], "schwab", "trades", *MARCH)
     assert not is_period_imported(
-        accounts["cash"], "schwab", "trades",
-        datetime.date(2026, 4, 1), datetime.date(2026, 4, 30),
+        accounts["cash"],
+        "schwab",
+        "trades",
+        datetime.date(2026, 4, 1),
+        datetime.date(2026, 4, 30),
     )
     # Keyed on (account, broker, document_kind); format/version excluded.
     assert not is_period_imported(accounts["cash"], "fidelity", "trades", *MARCH)
@@ -106,7 +109,8 @@ def test_import_transactions_links_and_uniqueness(batch, accounts, usd):
     assert imports[1].external_id == ""
 
     # Unique per batch when non-blank.
-    from django.db import IntegrityError, transaction as db_tx
+    from django.db import IntegrityError
+    from django.db import transaction as db_tx
 
     with pytest.raises(IntegrityError), db_tx.atomic():
         TransactionImport.objects.create(

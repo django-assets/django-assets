@@ -42,6 +42,9 @@ class BulkImportResult:
     inserted: int = 0
     failed: int = 0
     errors: list[BulkImportError] = field(default_factory=list)
+    transactions: list["Transaction"] = field(default_factory=list)
+    """Created rows in input order (failed rows omitted) — the brokerage
+    import wrapper links TransactionImport provenance from these."""
 
 
 def _invalidate_cachalot(using: str) -> None:
@@ -210,6 +213,7 @@ class TransactionBuilder:
         agnostic: ImportBatch coupling is brokerage's wrapper, not core's.
         """
         inserted = 0
+        created: list[Transaction] = []
         errors: list[BulkImportError] = []
         rows_iter = iter(rows)
         index = 0
@@ -239,7 +243,10 @@ class TransactionBuilder:
                     TransactionLeg.objects.using(using).bulk_create(all_legs)
                 _invalidate_cachalot(using)
                 inserted += len(prepared)
-        return BulkImportResult(inserted=inserted, failed=len(errors), errors=errors)
+                created.extend(tx for tx, _ in prepared)
+        return BulkImportResult(
+            inserted=inserted, failed=len(errors), errors=errors, transactions=created
+        )
 
     @classmethod
     def delete_range(
