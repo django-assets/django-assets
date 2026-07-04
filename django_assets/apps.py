@@ -1,4 +1,5 @@
 from django.apps import AppConfig
+from django.db.models.signals import post_migrate
 
 
 class DjangoAssetsConfig(AppConfig):
@@ -6,7 +7,8 @@ class DjangoAssetsConfig(AppConfig):
 
     Sub-packages (core, instruments, brokerage, trades, lots) are a code
     organization within this one app; all models share this app label and
-    one migration sequence.
+    one migration sequence. ready() hosts all sub-package wiring in a fixed
+    order (PADR-0011); steps land with their milestones.
     """
 
     name = "django_assets"
@@ -15,9 +17,15 @@ class DjangoAssetsConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self) -> None:
-        # Wiring order is fixed; steps land with their milestones:
-        # 1. DDL install post_migrate handler (hybrid mode only).
-        # 2. System checks (PostgreSQL backend + version floor).
-        # 3. Import-schema autodiscovery (brokerage).
-        # 4. Reconciliation signal handlers (brokerage).
-        return
+        # 1. DDL install wiring (ADR-0004): hybrid mode only. dispatch_uid
+        #    makes repeated ready() calls idempotent.
+        from django_assets import conf
+        from django_assets.core.ddl import install_ddl
+
+        if conf.ddl_install_mode() == "hybrid":
+            post_migrate.connect(install_ddl, sender=self, dispatch_uid="django_assets.install_ddl")
+        else:
+            post_migrate.disconnect(sender=self, dispatch_uid="django_assets.install_ddl")
+        # 2. System checks (PostgreSQL backend + version floor) — core C1.
+        # 3. Import-schema autodiscovery (ADR-0027) — brokerage B4.
+        # 4. Reconciliation signal handlers (ADR-0024) — brokerage B6.
