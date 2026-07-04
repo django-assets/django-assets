@@ -24,9 +24,7 @@ def test_instruments_changelists_render(admin_client, model_name):
 
 
 def test_deliverable_inline_under_option_meta(admin_client, pfe1_call):
-    url = reverse(
-        "admin:django_assets_optionmeta_change", args=[pfe1_call.option_meta.pk]
-    )
+    url = reverse("admin:django_assets_optionmeta_change", args=[pfe1_call.option_meta.pk])
     response = admin_client.get(url)
     assert response.status_code == 200
     assert "deliverables-TOTAL_FORMS" in response.content.decode()

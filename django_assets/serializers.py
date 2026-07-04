@@ -27,6 +27,11 @@ from django_assets.core.models import (
     Transaction,
     TransactionLeg,
 )
+from django_assets.instruments.crypto.models import CryptoMeta
+from django_assets.instruments.currencies.models import CurrencyMeta
+from django_assets.instruments.equities.models import EquityMeta
+from django_assets.instruments.models import CorporateAction
+from django_assets.instruments.options.models import Deliverable, OptionMeta
 
 try:
     from drf_spectacular.utils import extend_schema_field
@@ -180,3 +185,86 @@ class PortfolioSerializer(serializers.Serializer[Any]):
 
     def get_positions(self, obj: dict[str, Any]) -> dict[str, str]:
         return {inst.code: str(qty) for inst, qty in obj["positions"].items()}
+
+
+class CorporateActionSerializer(serializers.ModelSerializer[CorporateAction]):
+    class Meta:
+        model = CorporateAction
+        fields = [
+            "id",
+            "effective_date",
+            "action_type",
+            "source_reference",
+            "description",
+            "metadata",
+            "primary_instrument",
+        ]
+
+
+class CurrencyMetaSerializer(serializers.ModelSerializer[CurrencyMeta]):
+    class Meta:
+        model = CurrencyMeta
+        fields = [
+            "id",
+            "instrument",
+            "iso_code",
+            "iso_numeric",
+            "symbol",
+            "is_fiat",
+            "central_bank",
+        ]
+
+
+class CryptoMetaSerializer(serializers.ModelSerializer[CryptoMeta]):
+    class Meta:
+        model = CryptoMeta
+        fields = [
+            "id",
+            "instrument",
+            "symbol",
+            "network",
+            "contract_address",
+            "is_stablecoin",
+            "pegged_to",
+        ]
+
+
+class EquityMetaSerializer(serializers.ModelSerializer[EquityMeta]):
+    class Meta:
+        model = EquityMeta
+        fields = ["id", "instrument", "primary_exchange", "metadata"]
+
+
+class DeliverableSerializer(serializers.ModelSerializer[Deliverable]):
+    class Meta:
+        model = Deliverable
+        fields = [
+            "id",
+            "option_meta",
+            "sequence",
+            "instrument",
+            "quantity",
+            "cash_currency",
+            "cash_amount",
+            "effective_from",
+            "effective_to",
+            "corporate_action",
+        ]
+
+
+class OptionMetaSerializer(serializers.ModelSerializer[OptionMeta]):
+    deliverables = DeliverableSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = OptionMeta
+        fields = [
+            "id",
+            "instrument",
+            "underlying",
+            "expiry",
+            "strike",
+            "right",
+            "settlement_type",
+            "exercise_style",
+            "deliverables",
+        ]

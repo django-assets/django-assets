@@ -19,6 +19,11 @@ from decimal import Decimal
 from django_assets.core.models import Instrument
 
 
+def plain(value: Decimal) -> str:
+    """Canonical tag rendering: no trailing zeros, no E notation."""
+    return format(value.normalize(), "f")
+
+
 def corporate_action_tag(
     type: str,
     instrument: Instrument,
@@ -28,7 +33,7 @@ def corporate_action_tag(
 ) -> dict[str, int | str]:
     tag: dict[str, int | str] = {"type": type, "instrument_id": instrument.pk}
     if ratio is not None:
-        tag["ratio"] = str(ratio)
+        tag["ratio"] = plain(ratio)
     tag.update(extra)
     return tag
 
@@ -46,9 +51,9 @@ def rollover_tag(
         "kind": kind,  # "exercise" | "assignment"
         "option_instrument_id": option_instrument.pk,
         "underlying_instrument_id": underlying_instrument.pk,
-        "contracts": str(contracts),
-        "strike": str(strike),
-        "multiplier": str(multiplier),
+        "contracts": plain(contracts),
+        "strike": plain(strike),
+        "multiplier": plain(multiplier),
     }
 
 
@@ -62,6 +67,6 @@ def conversion_tag(
     return {
         "from_instrument_id": from_instrument.pk,
         "to_instrument_id": to_instrument.pk,
-        "from_quantity": str(from_quantity),
-        "to_quantity": str(to_quantity),
+        "from_quantity": plain(from_quantity),
+        "to_quantity": plain(to_quantity),
     }

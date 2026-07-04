@@ -14,6 +14,7 @@ from django_assets.instruments.admin import (
     CryptoMetaAdmin,
     CurrencyMetaAdmin,
     EquityMetaAdmin,
+    OptionMetaAdmin,
 )
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     "ExchangeAdmin",
     "IdentifierAdmin",
     "InstrumentAdmin",
+    "OptionMetaAdmin",
     "TransactionAdmin",
     "TransactionLegAdmin",
 ]

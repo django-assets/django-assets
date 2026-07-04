@@ -16,11 +16,15 @@ def _has_trigger():
 def test_ddl_migrations_reverse_and_reapply():
     executor = MigrationExecutor(connection)
     assert _has_trigger()
-    # Reverse all DDL migrations (back to the schema-only 0002).
+    # Reverse to the schema-only 0002 — this also unapplies every later
+    # milestone's migrations, so the re-apply MUST target the leaf node
+    # (not a hardcoded number) or the rest of the suite runs against a
+    # half-migrated database.
     executor.migrate([("django_assets", "0002_add_transaction_and_leg")])
     executor.loader.build_graph()
     assert not _has_trigger()
-    # Forward again.
+    # Forward again, to the current leaf.
     executor = MigrationExecutor(connection)
-    executor.migrate([("django_assets", "0005_ddl_transaction_legs_balanced")])
+    leaf = executor.loader.graph.leaf_nodes("django_assets")
+    executor.migrate(leaf)
     assert _has_trigger()
