@@ -35,6 +35,8 @@ dev = [
     "pytest-cov==5.0.0",
     "freezegun==1.5.1",
     "coverage==7.5.0",
+    # DRF surface tests (the drf extra mirrors this pin)
+    "djangorestframework>=3.14,<4.0",
     # Lint / type-check
     "ruff>=0.15.9",
     "mypy>=1.13",

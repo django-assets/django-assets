@@ -133,6 +133,7 @@ drf = [
 dev = [
     { name = "coverage" },
     { name = "django-stubs" },
+    { name = "djangorestframework" },
     { name = "djangorestframework-stubs" },
     { name = "freezegun" },
     { name = "mypy" },
@@ -156,6 +157,7 @@ provides-extras = ["drf"]
 dev = [
     { name = "coverage", specifier = "==7.5.0" },
     { name = "django-stubs", specifier = ">=5.1" },
+    { name = "djangorestframework", specifier = ">=3.14,<4.0" },
     { name = "djangorestframework-stubs", specifier = ">=3.15" },
     { name = "freezegun", specifier = "==1.5.1" },
     { name = "mypy", specifier = ">=1.13" },
