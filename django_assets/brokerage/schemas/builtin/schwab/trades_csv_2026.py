@@ -87,4 +87,13 @@ class SchwabTradesCsv2026(ImportSchema):
         return [tx]
 
     def match_criteria(self, line: Any) -> Any:
-        raise NotImplementedError  # arrives with milestone B7 (ADR-0029)
+        """Cash-side criteria: the broker's net Amount in the trade's
+        currency, on the batch (cash) account (ADR-0029)."""
+        from django_assets.brokerage.matching import MatchCriteria
+
+        date, _action, symbol, *_rest, amount = line.raw_data
+        instrument = Instrument.resolve(symbol)
+        currency = instrument.price_currency
+        if currency is None:
+            raise NotImplementedError(f"{symbol} has no price_currency")
+        return MatchCriteria(date=parse_us_date(date), instrument=currency, amount=_money(amount))

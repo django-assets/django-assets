@@ -8,6 +8,7 @@ from django_assets.brokerage.models import (
     AccountProfile,
     ImportBatch,
     ImportLine,
+    ImportLineProposal,
     TransactionImport,
 )
 from django_assets.core.models import (
@@ -36,6 +37,7 @@ __all__ = [
     "Identifier",
     "ImportBatch",
     "ImportLine",
+    "ImportLineProposal",
     "Instrument",
     "OptionMeta",
     "Transaction",

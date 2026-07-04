@@ -5,6 +5,7 @@ from django_assets.brokerage.admin import (
     AccountProfileAdmin,
     ImportBatchAdmin,
     ImportLineAdmin,
+    ImportLineProposalAdmin,
     TransactionImportAdmin,
 )
 from django_assets.core.admin import (
@@ -34,6 +35,7 @@ __all__ = [
     "IdentifierAdmin",
     "ImportBatchAdmin",
     "ImportLineAdmin",
+    "ImportLineProposalAdmin",
     "InstrumentAdmin",
     "OptionMetaAdmin",
     "TransactionAdmin",

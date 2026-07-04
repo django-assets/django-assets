@@ -38,6 +38,12 @@ class ImportSchema:
     name: ClassVar[str] = ""
     definition: ClassVar[dict[str, Any]] = {}
 
+    # ADR-0029 dedup tunables (per-broker defaults, all overridable).
+    date_window_days: ClassVar[int] = 7
+    settlement_tolerance_days: ClassVar[int] = 2
+    max_proposals: ClassVar[int] = 5
+    max_score_to_propose: ClassVar[float] = 3.0  # float-ok: score heuristic
+
     def parse_batch(self, batch: "ImportBatch", source: Any) -> "Iterator[ImportLine]":
         """Yield UNSAVED ImportLines (the orchestrator persists them)."""
         raise NotImplementedError

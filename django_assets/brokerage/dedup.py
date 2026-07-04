@@ -14,17 +14,111 @@ from django_assets.brokerage.models import ImportBatch, TransactionImport
 from django_assets.core.models import Account, Transaction
 
 if TYPE_CHECKING:
-    from django_assets.brokerage.models import ImportLine
+    from django_assets.brokerage.matching import MatchCriteria
+    from django_assets.brokerage.models import ImportLine, ImportLineProposal
+    from django_assets.brokerage.schemas import ImportSchema
 
 
-def propose_candidates(line: "ImportLine") -> list[object]:
-    """ADR-0029 §8.1 hook: candidate duplicate transactions for a line.
+def _criteria_for(
+    line: "ImportLine",
+) -> "tuple[MatchCriteria | None, ImportSchema]":
+    """MatchCriteria for a matchable line, or None when the schema is
+    pure-informational (match_criteria unimplemented)."""
+    schema = line.batch.get_schema()
+    try:
+        return schema.match_criteria(line), schema
+    except NotImplementedError:
+        return None, schema
 
-    Milestone B7 delivers the hybrid-scoring implementation and the
-    ImportLineProposal review flow; until then nothing is proposed and
-    every matchable line materializes directly.
-    """
-    return []
+
+def propose_candidates(line: "ImportLine") -> list["ImportLineProposal"]:
+    """ADR-0029: store ranked 1:1 proposals for a line (hard filters,
+    soft scoring, threshold discard, max_proposals cap). Returns the
+    stored unresolved proposals; empty means materialize directly."""
+    from django_assets.brokerage.matching import hard_filter_candidates, score_candidate
+    from django_assets.brokerage.models import ImportLineProposal
+
+    criteria, schema = _criteria_for(line)
+    if criteria is None:
+        return []
+
+    scored = []
+    for candidate, leg in hard_filter_candidates(line, criteria, schema):
+        score = score_candidate(criteria, candidate, leg, schema)
+        if score.total <= schema.max_score_to_propose:
+            scored.append((score, candidate))
+    scored.sort(key=lambda pair: pair[0].total)
+
+    proposals = []
+    for rank, (score, candidate) in enumerate(scored[: schema.max_proposals], start=1):
+        proposal, _ = ImportLineProposal.objects.get_or_create(
+            line=line,
+            candidate_transaction=candidate,
+            defaults={
+                "score_total": score.total,
+                "score_breakdown": score.breakdown,
+                "rank": rank,
+            },
+        )
+        proposals.append(proposal)
+    return proposals
+
+
+def detect_compounds(batch: ImportBatch) -> None:
+    """Same-day-in-batch COMBINE/SPLIT detection (ADR-0029): group
+    unmatched broker lines by (trade_date, instrument, account, sign);
+    when a group of 2–4 lines sums to a candidate manual's amount, emit
+    one compound proposal group (members share a UUID). The 1:1
+    proposals stay stored as alternatives."""
+    import uuid
+    from collections import defaultdict
+
+    from django_assets.brokerage.matching import hard_filter_candidates
+    from django_assets.brokerage.models import ImportLineProposal
+
+    groups: dict[tuple[object, ...], list[tuple]] = defaultdict(list)  # type: ignore[type-arg]
+    for line in batch.lines.filter(kind__startswith="broker_", matched_legs__isnull=True):
+        if line.metadata.get("materialized"):
+            continue
+        criteria, schema = _criteria_for(line)
+        if criteria is None:
+            continue
+        key = (
+            criteria.date,
+            criteria.instrument.pk,
+            batch.account_id,
+            criteria.amount >= 0,
+        )
+        groups[key].append((line, criteria, schema))
+
+    for members in groups.values():
+        if not 2 <= len(members) <= 4:
+            continue  # the auto-grouping cap bounds the search space
+        total = sum(criteria.amount for _, criteria, _ in members)
+        first_line, first_criteria, schema = members[0]
+        summed = type(first_criteria)(
+            date=first_criteria.date,
+            instrument=first_criteria.instrument,
+            amount=total,
+            compound_hint=first_criteria.compound_hint,
+        )
+        for candidate, leg in hard_filter_candidates(first_line, summed, schema):
+            if leg.amount != total:
+                continue  # exact sum-match only
+            group_id = uuid.uuid4()
+            for line, _criteria, _schema in members:
+                ImportLineProposal.objects.update_or_create(
+                    line=line,
+                    candidate_transaction=candidate,
+                    defaults={
+                        "score_total": 0.0,
+                        "score_breakdown": {"compound_sum_match": 0.0},
+                        "rank": 1,
+                        "proposal_group": group_id,
+                        "compound_kind": first_criteria.compound_hint,
+                    },
+                )
+            break  # one compound proposal per group
 
 
 def is_period_imported(

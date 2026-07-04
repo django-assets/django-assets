@@ -21,6 +21,7 @@ from django_assets.brokerage.models import (
     AccountProfile,
     ImportBatch,
     ImportLine,
+    ImportLineProposal,
     TransactionImport,
 )
 from django_assets.core.builder import TransactionBuilder
@@ -332,4 +333,22 @@ class ImportLineSerializer(serializers.ModelSerializer[ImportLine]):
             "note",
             "matched_legs",
             "metadata",
+        ]
+
+
+class ImportLineProposalSerializer(serializers.ModelSerializer[ImportLineProposal]):
+    class Meta:
+        model = ImportLineProposal
+        fields = [
+            "id",
+            "line",
+            "candidate_transaction",
+            "score_total",
+            "score_breakdown",
+            "rank",
+            "proposal_group",
+            "compound_kind",
+            "created_at",
+            "resolved_at",
+            "resolution",
         ]

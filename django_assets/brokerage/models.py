@@ -175,6 +175,41 @@ class ImportLine(models.Model):
         return self.kind.startswith("broker_")
 
 
+class ImportLineProposal(models.Model):
+    """A candidate match between an ImportLine and a pre-existing manual
+    Transaction, surfaced for user review (ADR-0029). Compound
+    (COMBINE/SPLIT) members share a proposal_group UUID and resolve
+    atomically; the review surface shows one best proposal at a time."""
+
+    line = models.ForeignKey(ImportLine, related_name="proposals", on_delete=models.CASCADE)
+    candidate_transaction = models.ForeignKey(
+        Transaction, related_name="dedup_proposals", on_delete=models.CASCADE
+    )
+    score_total = models.FloatField()  # float-ok: a ranking heuristic, not money
+    score_breakdown = models.JSONField(default=dict)
+    rank = models.PositiveSmallIntegerField()
+    proposal_group = models.UUIDField(null=True, blank=True, db_index=True)
+    compound_kind = models.CharField(max_length=10, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution = models.CharField(max_length=20, blank=True)
+    """'' (pending) | 'confirmed' | 'rejected' | 'superseded'."""
+
+    objects: ClassVar[models.Manager["ImportLineProposal"]] = models.Manager()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["line", "candidate_transaction"],
+                name="uniq_proposal_line_candidate",
+            ),
+        ]
+        indexes = [models.Index(fields=["line", "rank"])]
+
+    def __str__(self) -> str:
+        return f"proposal line={self.line_id} tx={self.candidate_transaction_id} r{self.rank}"
+
+
 def guard_reconciliation_flag(
     sender: type[AccountProfile], instance: AccountProfile, **kwargs: Any
 ) -> None:
