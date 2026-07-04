@@ -69,6 +69,8 @@ def delete_import_batch(batch: ImportBatch) -> dict[str, int]:
     created (whole-transaction deletes keep the trigger satisfied).
     Lines, TransactionImports, and proposals cascade with the batch."""
     with db_transaction.atomic():
+        for line in batch.lines.all():
+            line.matched_legs.clear()  # unflip: the lock guards deletion
         tx_ids = list(
             TransactionImport.objects.filter(batch=batch).values_list("transaction_id", flat=True)
         )
