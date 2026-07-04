@@ -35,6 +35,8 @@ dev = [
     "pytest-cov==5.0.0",
     "freezegun==1.5.1",
     "coverage==7.5.0",
+    # DRF surface tests (the drf extra mirrors this pin)
+    "djangorestframework>=3.14,<4.0",
     # Lint / type-check
     "ruff>=0.15.9",
     "mypy>=1.13",
@@ -92,6 +94,11 @@ disable_error_code = ["misc", "no-untyped-call"]
 [[tool.mypy.overrides]]
 module = "*.admin"
 ignore_errors = true
+
+# drf-spectacular is optional and has no stubs requirement here.
+[[tool.mypy.overrides]]
+module = "drf_spectacular.*"
+ignore_missing_imports = true
 
 # Test code is not type-checked; correctness comes from the tests passing.
 [[tool.mypy.overrides]]

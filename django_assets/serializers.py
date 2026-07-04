@@ -1,0 +1,182 @@
+"""DRF serializers (spec §9, ADR-0017): serializers only — no viewsets,
+no urls, no auth assumptions.
+
+DRF is the optional `django-assets[drf]` extra; this module is the only
+one that imports rest_framework, and it fails with an actionable message
+when DRF is absent [D-8]. Core never imports this module.
+"""
+
+from collections.abc import Callable
+from typing import Any
+
+try:
+    from rest_framework import serializers
+except ImportError as exc:  # pragma: no cover — exercised via subprocess test
+    raise ImportError(
+        "django_assets.serializers requires djangorestframework. "
+        'Install the extra: pip install "django-assets[drf]".'
+    ) from exc
+
+from django_assets.core.builder import TransactionBuilder
+from django_assets.core.measure import Measure
+from django_assets.core.models import (
+    Account,
+    Exchange,
+    Identifier,
+    Instrument,
+    Transaction,
+    TransactionLeg,
+)
+
+try:
+    from drf_spectacular.utils import extend_schema_field
+except ImportError:  # drf-spectacular is optional on top of the drf extra
+
+    def extend_schema_field(field: Any) -> Callable[[Any], Any]:
+        def decorator(cls: Any) -> Any:
+            return cls
+
+        return decorator
+
+
+class ExchangeSerializer(serializers.ModelSerializer[Exchange]):
+    class Meta:
+        model = Exchange
+        fields = ["id", "code", "name", "timezone"]
+
+
+class InstrumentSerializer(serializers.ModelSerializer[Instrument]):
+    class Meta:
+        model = Instrument
+        fields = [
+            "id",
+            "code",
+            "quantity_decimals",
+            "price_decimals",
+            "multiplier",
+            "price_currency",
+            "is_active",
+            "metadata",
+        ]
+
+
+class IdentifierSerializer(serializers.ModelSerializer[Identifier]):
+    class Meta:
+        model = Identifier
+        fields = [
+            "id",
+            "instrument",
+            "type",
+            "value",
+            "exchange",
+            "is_active",
+            "effective_from",
+            "effective_to",
+        ]
+
+
+class AccountSerializer(serializers.ModelSerializer[Account]):
+    class Meta:
+        model = Account
+        fields = ["id", "owner", "name", "created_at", "metadata"]
+        read_only_fields = ["created_at"]
+
+
+@extend_schema_field(
+    {"type": "object", "properties": {"amount": {"type": "string"}, "unit": {"type": "string"}}}
+)
+class MeasureField(serializers.Field[Measure, Any, dict[str, str], Any]):
+    """{"amount": "12.3456", "unit": "USD"} — read-only computed value."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs.setdefault("read_only", True)
+        super().__init__(**kwargs)
+
+    def to_representation(self, value: Measure) -> dict[str, str]:
+        return {"amount": str(value.amount), "unit": value.unit.code}
+
+
+class TransactionLegSerializer(serializers.ModelSerializer[TransactionLeg]):
+    class Meta:
+        model = TransactionLeg
+        fields = ["id", "account", "instrument", "amount", "description", "metadata"]
+
+
+class TransactionSerializer(serializers.ModelSerializer[Transaction]):
+    """Whole-transaction read/write; the write path goes through
+    TransactionBuilder so every guard (intake, quantization, ownership,
+    balance) applies."""
+
+    legs = TransactionLegSerializer(many=True)
+
+    class Meta:
+        model = Transaction
+        fields = [
+            "id",
+            "account",
+            "timestamp",
+            "trade_timestamp",
+            "description",
+            "metadata",
+            "origin",
+            "legs",
+        ]
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        sums: dict[Instrument, Any] = {}
+        for leg in attrs.get("legs", []):
+            inst = leg["instrument"]
+            sums[inst] = sums.get(inst, 0) + leg["amount"]
+        off = {inst.code: str(total) for inst, total in sums.items() if total != 0}
+        if off:
+            raise serializers.ValidationError(
+                f"transaction legs are not balanced per instrument: {off}"
+            )
+        return attrs
+
+    def create(self, validated_data: dict[str, Any]) -> Transaction:
+        legs = validated_data.pop("legs")
+        builder = TransactionBuilder(
+            account=validated_data["account"],
+            timestamp=validated_data["timestamp"],
+            trade_timestamp=validated_data.get("trade_timestamp"),
+            description=validated_data.get("description", ""),
+            metadata=validated_data.get("metadata"),
+            origin=validated_data.get("origin", "manual"),
+        )
+        with builder as b:
+            for leg in legs:
+                b.add_leg(
+                    account=leg["account"],
+                    instrument=leg["instrument"],
+                    amount=leg["amount"],
+                    description=leg.get("description", ""),
+                    metadata=leg.get("metadata"),
+                )
+        assert b.transaction is not None
+        return b.transaction
+
+
+class HoldingSerializer(serializers.Serializer[Any]):
+    """Computed position: {"account": pk, "instrument": code, "quantity": "…"}."""
+
+    account: "serializers.PrimaryKeyRelatedField[Account]" = serializers.PrimaryKeyRelatedField(
+        read_only=True
+    )
+    instrument: "serializers.SlugRelatedField[Instrument]" = serializers.SlugRelatedField(
+        slug_field="code", read_only=True
+    )
+    quantity = serializers.CharField(read_only=True)
+
+
+class PortfolioSerializer(serializers.Serializer[Any]):
+    """Computed snapshot: positions keyed by instrument code, decimals as
+    strings (Portfolio.at output)."""
+
+    account: "serializers.PrimaryKeyRelatedField[Account]" = serializers.PrimaryKeyRelatedField(
+        read_only=True
+    )
+    positions = serializers.SerializerMethodField()
+
+    def get_positions(self, obj: dict[str, Any]) -> dict[str, str]:
+        return {inst.code: str(qty) for inst, qty in obj["positions"].items()}
