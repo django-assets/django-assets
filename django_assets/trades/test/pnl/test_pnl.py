@@ -92,7 +92,6 @@ def test_split_trade_pnl_sums_exactly(user, sale_tx, aapl):
     b = Trade.objects.create(user=user, name="B")
     a.assign(sale_tx, quantity="500", instrument=aapl)
     b.assign(sale_tx, quantity="500", instrument=aapl)
-    whole = Trade.objects.create(user=user, name="whole-reference")
 
     pnl_a = a.calculate_pnl()
     pnl_b = b.calculate_pnl()

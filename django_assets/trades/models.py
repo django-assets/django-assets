@@ -17,7 +17,83 @@ from django.db import transaction as db_transaction
 
 from django_assets.core.intake import to_decimal
 from django_assets.core.models import Instrument, Transaction, TransactionLeg
+from django_assets.core.queries import SupportsGetPrice
 from django_assets.trades.exceptions import OverAllocationError
+
+
+class _PnlEvent:
+    """Per-transaction P&L walk state: position deltas + attributed cash."""
+
+    def __init__(self) -> None:
+        self.positions: dict[Instrument, Decimal] = {}
+        self.cash: Decimal = Decimal(0)
+
+
+class TradeQuerySet(models.QuerySet["Trade"]):
+    """DB-level query surface (spec §5); documented as potentially
+    expensive at the .open()/.closed() aggregation — acceptable at
+    retail scale (ADR-0016 philosophy). Queryset-level status uses each
+    trade's OWN allocations; instance properties aggregate descendants."""
+
+    def for_user(self, user: object) -> "TradeQuerySet":
+        from typing import cast
+
+        return self.filter(user=cast("int", user))
+
+    def root_trades(self) -> "TradeQuerySet":
+        return self.filter(parent__isnull=True)
+
+    def children_of(self, trade: "Trade") -> "TradeQuerySet":
+        return self.filter(parent=trade)
+
+    def descendants_of(self, trade: "Trade") -> "TradeQuerySet":
+        return self.filter(pk__in=[pk for pk in trade._tree_pks() if pk != trade.pk])
+
+    def ancestors_of(self, trade: "Trade") -> "TradeQuerySet":
+        pks, ancestor = [], trade.parent
+        while ancestor is not None:
+            pks.append(ancestor.pk)
+            ancestor = ancestor.parent
+        return self.filter(pk__in=pks)
+
+    def open(self) -> "TradeQuerySet":
+        open_ids = (
+            TradeAllocation.objects.filter(category="")
+            .values("trade_id", "leg__instrument_id")
+            .annotate(total=models.Sum("amount"))
+            .exclude(total=0)
+            .values_list("trade_id", flat=True)
+        )
+        return self.filter(pk__in=open_ids)
+
+    def closed(self) -> "TradeQuerySet":
+        return self.exclude(pk__in=self.open().values_list("pk", flat=True))
+
+    def with_instrument(self, instrument: Instrument) -> "TradeQuerySet":
+        return self.filter(allocations__leg__instrument=instrument).distinct()
+
+    def with_tag(self, category_code: str, tag_name: str) -> "TradeQuerySet":
+        return self.filter(tags__category__code=category_code, tags__name=tag_name).distinct()
+
+    def with_category(self, category_code: str) -> "TradeQuerySet":
+        return self.filter(tags__category__code=category_code).distinct()
+
+    def with_tags(self, **categories: "str | list[str]") -> "TradeQuerySet":
+        """AND across categories, OR within a category's names."""
+        qs = self
+        for code, names in categories.items():
+            values = [names] if isinstance(names, str) else list(names)
+            qs = qs.filter(tags__category__code=code, tags__name__in=values)
+        return qs.distinct()
+
+    def with_tags_any(self, category_code: str, names: "list[str]") -> "TradeQuerySet":
+        return self.filter(tags__category__code=category_code, tags__name__in=names).distinct()
+
+    def with_tags_all(self, category_code: str, names: "list[str]") -> "TradeQuerySet":
+        qs = self
+        for name in names:
+            qs = qs.filter(tags__category__code=category_code, tags__name=name)
+        return qs.distinct()
 
 
 class Trade(models.Model):
@@ -33,8 +109,11 @@ class Trade(models.Model):
     description = models.TextField(blank=True)
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    tags: "models.ManyToManyField[Tag, models.Model]" = models.ManyToManyField(
+        "Tag", related_name="trades", blank=True
+    )
 
-    objects: ClassVar[models.Manager["Trade"]] = models.Manager()
+    objects: ClassVar[TradeQuerySet] = TradeQuerySet.as_manager()  # type: ignore[assignment]
 
     class Meta:
         constraints = [
@@ -136,7 +215,15 @@ class Trade(models.Model):
             for leg in legs:
                 by_instrument.setdefault(leg.instrument_id, []).append(leg)
             candidates = [group for group in by_instrument.values() if len(group) == 2]
-            asset_legs = max(candidates, key=lambda group: abs(group[0].amount))
+            # The settlement currency shows up on the perspective account;
+            # prefer mirrored groups that DON'T (the traded asset).
+            non_cash = [
+                group
+                for group in candidates
+                if not any(leg.account_id == transaction.account_id for leg in group)
+            ]
+            pool = non_cash or candidates
+            asset_legs = max(pool, key=lambda group: abs(group[0].amount))
         position_leg, mirror_accounts = _split_position_and_mirror(asset_legs, legs)
 
         if fraction is not None:
@@ -246,6 +333,117 @@ class Trade(models.Model):
             result = ts if all(total == 0 for total in positions.values()) else None
         return result if events else None
 
+    # -- tagging (spec §2.5) ----------------------------------------------
+
+    def add_tag(self, category_code: str, tag_name: str) -> "Tag":
+        """Get-or-create within THIS user's vocabulary, then attach."""
+        category, _ = TagCategory.objects.get_or_create(
+            user=self.user, code=category_code, defaults={"name": category_code}
+        )
+        tag, _ = Tag.objects.get_or_create(category=category, name=tag_name)
+        self.tags.add(tag)
+        return tag
+
+    def remove_tag(self, category_code: str, tag_name: str) -> None:
+        self.tags.remove(*self.tags.filter(category__code=category_code, name=tag_name))
+
+    def get_tags_by_category(self) -> "dict[str, list[str]]":
+        result: dict[str, list[str]] = {}
+        for tag in self.tags.select_related("category").order_by("category__code", "name"):
+            result.setdefault(tag.category.code, []).append(tag.name)
+        return result
+
+    # -- P&L (spec §4; average-cost event walk, never stored) --------------
+
+    def calculate_pnl(
+        self,
+        as_of: datetime.datetime | None = None,
+        price_source: "SupportsGetPrice | None" = None,
+    ) -> "dict[str, object]":
+        """Realized from revenue/cost cash slices by average-cost walk;
+        fee-category slices are already inside our allocator's net cash
+        slices and are NOT re-subtracted (reported via get_summary).
+        Unrealized marks open positions via a PriceSource; None without
+        one — unpriced positions are surfaced, never zeroed."""
+        allocations = TradeAllocation.objects.filter(trade_id__in=self._tree_pks()).select_related(
+            "leg", "leg__transaction", "leg__instrument"
+        )
+        if as_of is not None:
+            allocations = allocations.filter(leg__transaction__timestamp__lte=as_of)
+
+        by_transaction: dict[int, _PnlEvent] = {}
+        for allocation in allocations.order_by(
+            "leg__transaction__timestamp", "leg__transaction_id"
+        ):
+            event = by_transaction.setdefault(allocation.leg.transaction_id, _PnlEvent())
+            if allocation.category == "":
+                inst = allocation.leg.instrument
+                event.positions[inst] = event.positions.get(inst, Decimal(0)) + allocation.amount
+            elif allocation.category in ("revenue", "cost"):
+                event.cash += allocation.amount
+
+        realized = Decimal(0)
+        position: dict[Instrument, Decimal] = {}
+        basis: dict[Instrument, Decimal] = {}
+        for event in by_transaction.values():
+            cash = event.cash
+            for inst, delta in event.positions.items():
+                pos = position.get(inst, Decimal(0))
+                held_basis = basis.get(inst, Decimal(0))
+                if pos == 0 or (delta > 0) == (pos > 0):
+                    position[inst] = pos + delta
+                    basis[inst] = held_basis + cash
+                else:
+                    closing = min(abs(delta), abs(pos))
+                    released = held_basis * closing / abs(pos)
+                    realized += cash * closing / abs(delta) + released
+                    basis[inst] = held_basis - released
+                    position[inst] = pos + delta
+                    if abs(delta) > closing:  # crossed through zero
+                        basis[inst] += cash * (abs(delta) - closing) / abs(delta)
+
+        open_basis = sum(basis[inst] for inst, pos in position.items() if pos != 0)
+        cost_basis = -open_basis
+        current_value: Decimal | None = None
+        unpriced: list[Instrument] = []
+        if price_source is not None:
+            from django_assets.core.measure import value as measure_value
+
+            current_value = Decimal(0)
+            for inst, pos in position.items():
+                if pos == 0:
+                    continue
+                quote = price_source.get_price(inst, at=as_of)
+                if quote is None:
+                    unpriced.append(inst)
+                    continue
+                current_value += measure_value(pos, quote.price, inst).amount
+        else:
+            unpriced = [inst for inst, pos in position.items() if pos != 0]
+
+        unrealized = current_value - cost_basis if current_value is not None else None
+        total = realized + (unrealized if unrealized is not None else Decimal(0))
+        return {
+            "realized_pnl": realized,
+            "unrealized_pnl": unrealized,
+            "total_pnl": total,
+            "cost_basis": cost_basis,
+            "current_value": current_value,
+            "transactions_count": len(by_transaction),
+            "unpriced": unpriced,
+        }
+
+    def get_summary(self, as_of: datetime.datetime | None = None) -> "dict[str, object]":
+        fees = TradeAllocation.objects.filter(trade_id__in=self._tree_pks(), category="fee")
+        if as_of is not None:
+            fees = fees.filter(leg__transaction__timestamp__lte=as_of)
+        return {
+            **self.calculate_pnl(as_of=as_of),
+            "fees": fees.aggregate(total=models.Sum("amount"))["total"] or Decimal(0),
+            "status": self.status,
+            "tags": self.get_tags_by_category(),
+        }
+
     def accounts_involved(self) -> "list[int]":
         return list(
             TradeAllocation.objects.filter(trade_id__in=self._tree_pks())
@@ -344,3 +542,57 @@ def _split_position_and_mirror(
         if not is_mirror(candidate):
             return candidate, {other.account_id}
     return first, {second.account_id}
+
+
+class TagCategory(models.Model):
+    """A user-defined tag dimension (ADR-0030 §5): strategy, conviction…"""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="tag_categories"
+    )
+    code = models.SlugField(max_length=50)
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    objects: ClassVar[models.Manager["TagCategory"]] = models.Manager()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "code"], name="uniq_tagcategory_user_code"),
+        ]
+        verbose_name_plural = "tag categories"
+
+    def __str__(self) -> str:
+        return self.code
+
+
+class Tag(models.Model):
+    """A value within one category; flat, user-scoped via the category."""
+
+    category = models.ForeignKey(TagCategory, on_delete=models.CASCADE, related_name="tags")
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    objects: ClassVar[models.Manager["Tag"]] = models.Manager()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["category", "name"], name="uniq_tag_category_name"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.category.code}:{self.name}"
+
+
+def guard_same_user_tags(
+    sender: object, instance: Trade, action: str, pk_set: "set[int] | None", **kwargs: object
+) -> None:
+    """m2m_changed: a tag may only attach to a trade of the same user."""
+    if action != "pre_add" or not pk_set:
+        return
+    tag_ids = pk_set
+    foreign = Tag.objects.filter(pk__in=tag_ids).exclude(category__user=instance.user_id)
+    if foreign.exists():
+        raise ValueError("tags attach only to trades of the same user (ADR-0030)")

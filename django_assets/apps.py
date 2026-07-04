@@ -1,5 +1,5 @@
 from django.apps import AppConfig
-from django.db.models.signals import post_migrate, pre_delete, pre_save
+from django.db.models.signals import m2m_changed, post_migrate, pre_delete, pre_save
 
 
 class DjangoAssetsConfig(AppConfig):
@@ -62,4 +62,13 @@ class DjangoAssetsConfig(AppConfig):
             guard_locked_leg_delete,
             sender=TransactionLeg,
             dispatch_uid="django_assets.guard_locked_leg_delete",
+        )
+
+        # 6. Trades tag hygiene: same-user attachment only (ADR-0030).
+        from django_assets.trades.models import Trade, guard_same_user_tags
+
+        m2m_changed.connect(
+            guard_same_user_tags,
+            sender=Trade.tags.through,
+            dispatch_uid="django_assets.guard_same_user_tags",
         )

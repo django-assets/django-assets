@@ -2,7 +2,8 @@
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError, transaction as db_tx
+from django.db import IntegrityError
+from django.db import transaction as db_tx
 
 from django_assets.trades.models import Tag, TagCategory, Trade
 
@@ -90,3 +91,27 @@ def test_for_user_and_hierarchy_queries(user):
     assert set(Trade.objects.children_of(mine)) == {child}
     assert set(Trade.objects.descendants_of(mine)) == {child, grand}
     assert set(Trade.objects.ancestors_of(grand)) == {mine, child}
+
+
+def test_unallocated_legs_and_transaction_helpers(user):
+    import datetime
+
+    from django_assets.core.builder import TransactionBuilder
+    from django_assets.core.models import Account, Instrument
+    from django_assets.trades.queries import transactions_for, unallocated_legs
+
+    usd = Instrument.objects.create(code="USD", quantity_decimals=2)
+    cash = Account.objects.create(owner=user, name="cash")
+    external = Account.objects.create(owner=user, name="external")
+    with TransactionBuilder(
+        account=cash, timestamp=datetime.datetime(2026, 3, 13, tzinfo=datetime.UTC)
+    ) as b:
+        b.add_leg(account=cash, instrument=usd, amount="10.00")
+        b.add_leg(account=external, instrument=usd, amount="-10.00")
+    tx = b.transaction
+
+    assert unallocated_legs(account=cash).count() == 1
+    trade = Trade.objects.create(user=user, name="organizer")
+    trade.assign_leg(tx.legs.get(account=cash), "10.00")
+    assert unallocated_legs(account=cash).count() == 0
+    assert list(transactions_for(trade)) == [tx]
