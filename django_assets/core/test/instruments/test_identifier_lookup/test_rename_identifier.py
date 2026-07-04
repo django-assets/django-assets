@@ -17,7 +17,10 @@ def test_rename_identifier_atomic_swap():
     exchange = Exchange.objects.create(code="XNYS", name="NYSE", timezone="America/New_York")
     fiserv = Instrument.objects.create(code="FISV")
     Identifier.objects.create(
-        instrument=fiserv, type="ticker", value="FISV", exchange=exchange,
+        instrument=fiserv,
+        type="ticker",
+        value="FISV",
+        exchange=exchange,
         effective_from=datetime.date(2019, 1, 1),
     )
     cutover = datetime.date(2024, 6, 10)
