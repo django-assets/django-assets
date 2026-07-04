@@ -139,7 +139,7 @@ class Migration(migrations.Migration):
                 "constraints": [
                     # check= (not condition=): Django 4.2 lanes must apply
                     # this migration; 5.x only deprecates the old kwarg.
-                    models.CheckConstraint(
+                    models.CheckConstraint(  # type: ignore[call-arg]
                         check=models.Q(
                             models.Q(
                                 ("cash_amount__isnull", True),
