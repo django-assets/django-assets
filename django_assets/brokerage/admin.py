@@ -8,6 +8,7 @@ from django_assets.brokerage.models import (
     AccountProfile,
     ImportBatch,
     ImportLine,
+    ImportLineProposal,
     TransactionImport,
 )
 from django_assets.brokerage.schemas import registry
@@ -127,3 +128,20 @@ class LockAwareTransactionLegAdmin(TransactionLegAdmin):
 
 admin.site.unregister(TransactionLeg)
 admin.site.register(TransactionLeg, LockAwareTransactionLegAdmin)
+
+
+@admin.register(ImportLineProposal)
+class ImportLineProposalAdmin(admin.ModelAdmin):
+    """One-at-a-time review happens through current_proposal ordering;
+    this changelist is the audit surface."""
+
+    list_display = (
+        "line",
+        "candidate_transaction",
+        "rank",
+        "score_total",
+        "compound_kind",
+        "resolution",
+    )
+    list_filter = ("resolution", "compound_kind")
+    readonly_fields = ("score_breakdown", "proposal_group", "created_at", "resolved_at")

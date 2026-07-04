@@ -83,9 +83,10 @@ def test_materialize_new_fast_path(batch, accounts, usd, aapl, manual_buy):
     process_batch(batch, SCHWAB_CSV)
     line = buy_line(batch)
     materialize_new(line)
-    assert ImportLineProposal.objects.filter(
-        line=line, resolution="rejected"
-    ).count() == ImportLineProposal.objects.filter(line=line).count()
+    assert (
+        ImportLineProposal.objects.filter(line=line, resolution="rejected").count()
+        == ImportLineProposal.objects.filter(line=line).count()
+    )
     # The manual stays; a fresh import-origin duplicate now exists (the
     # user said "these are different events").
     assert Transaction.objects.filter(origin="manual").count() == 1
@@ -102,9 +103,13 @@ def test_override_creates_audit_row(batch, accounts, usd, aapl, manual_buy):
 
 
 def test_score_threshold_discards_wild_candidates(batch, accounts, usd, aapl):
-    """A manual with a wildly different amount is never stored."""
+    """Amount drift caps at 1.0, so a wild amount PLUS days of
+    unexplained date drift crosses max_score_to_propose=3.0 — such
+    candidates are discarded at scoring time, never stored."""
     with TransactionBuilder(
-        account=accounts["cash"], timestamp=BUY_DATE, description="unrelated"
+        account=accounts["cash"],
+        timestamp=BUY_DATE + datetime.timedelta(days=6),  # in window, drift 4
+        description="unrelated",
     ) as b:
         b.add_leg(account=accounts["cash"], instrument=usd, amount="-9.99")
         b.add_leg(account=accounts["external"], instrument=usd, amount="9.99")
@@ -122,9 +127,7 @@ def test_stale_candidate_auto_supersedes(batch, accounts, usd, aapl, manual_buy)
     proposal = ImportLineProposal.objects.get(line=line, rank=1)
 
     # Another line claims the candidate's cash leg in the meantime.
-    other = ImportLine.objects.create(
-        batch=batch, line_number=99, kind="broker_trade", raw_data=[]
-    )
+    other = ImportLine.objects.create(batch=batch, line_number=99, kind="broker_trade", raw_data=[])
     cash_leg = manual_buy.legs.get(account=accounts["cash"])
     other.matched_legs.add(cash_leg)
 

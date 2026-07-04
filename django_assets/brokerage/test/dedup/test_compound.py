@@ -68,8 +68,7 @@ def test_compound_cap_at_four(batch, accounts, usd, aapl, manual_sale):
     """5+ same-day fills are not auto-grouped (combinatorial bound)."""
     header = '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"'
     rows = [
-        f'"03/10/2026","Sell","AAPL","APPLE INC","200","200.00","0.00","40000.00"'
-        for _ in range(5)
+        '"03/10/2026","Sell","AAPL","APPLE INC","200","200.00","0.00","40000.00"' for _ in range(5)
     ]
     process_batch(batch, "\n".join([header, *rows, ""]))
     assert not ImportLineProposal.objects.filter(proposal_group__isnull=False).exists()
@@ -103,11 +102,19 @@ def test_split_destructive_confirm(batch, accounts, usd, aapl):
 
 
 def test_compound_alternatives_kept(batch, accounts, usd, aapl, manual_sale):
-    """1:1 proposals for each line are stored alongside the compound —
-    the review surface shows one at a time (compound first, ADR-0029)."""
+    """1:1 proposals against OTHER candidates stay stored alongside the
+    compound (the same-candidate 1:1 is absorbed into the compound row —
+    unique (line, candidate)); the surface shows the compound first."""
+    with TransactionBuilder(
+        account=accounts["cash"],
+        timestamp=SELL_DATE + datetime.timedelta(days=1),
+        description="a different plausible sale",
+    ) as b:
+        b.add_leg(account=accounts["cash"], instrument=usd, amount="119000.00")
+        b.add_leg(account=accounts["external"], instrument=usd, amount="-119000.00")
     process_batch(batch, two_fill_csv(600, "120000.00", 400, "80000.00"))
     line = batch.lines.get(line_number=1)
     best = current_proposal(line)
     assert best.proposal_group is not None  # compound outranks the 1:1s
     singles = ImportLineProposal.objects.filter(line=line, proposal_group__isnull=True)
-    assert singles.exists()  # the 40%-drift 1:1 kept as an alternative
+    assert singles.exists()  # the other candidate's 1:1 kept as alternative

@@ -34,6 +34,7 @@ from django_assets.serializers import (
     CorporateActionSerializer,
     ExchangeSerializer,
     IdentifierSerializer,
+    ImportLineProposalSerializer,
     ImportLineSerializer,
     InstrumentSerializer,
     OptionMetaSerializer,
@@ -126,3 +127,75 @@ class ImportLineViewSet(viewsets.ReadOnlyModelViewSet[ImportLine]):
         legs = list(TransactionLeg.objects.filter(pk__in=self._leg_ids(request)))
         unmatch_line(line, legs)
         return Response({"matched": line.matched_legs.count()})
+
+    # -- ADR-0029 proposal review: one best proposal at a time ----------
+
+    @action(detail=True, methods=["get"])
+    def proposal(self, request: Any, pk: Any = None) -> Any:
+        from django_assets.brokerage.review import current_proposal
+
+        best = current_proposal(self.get_object())
+        if best is None:
+            return Response(None)
+        data = ImportLineProposalSerializer(best).data
+        data["more_candidates"] = (
+            best.line.proposals.filter(resolution="").exclude(pk=best.pk).count()
+        )
+        return Response(data)
+
+    @action(detail=True, methods=["post"])
+    def confirm(self, request: Any, pk: Any = None) -> Any:
+        from django_assets.brokerage.models import ImportLineProposal
+        from django_assets.brokerage.review import confirm_proposal
+
+        proposal = ImportLineProposal.objects.get(
+            pk=request.data.get("proposal"), line=self.get_object()
+        )
+        try:
+            confirm_proposal(proposal)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response({"resolution": "confirmed"})
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request: Any, pk: Any = None) -> Any:
+        from django_assets.brokerage.models import ImportLineProposal
+        from django_assets.brokerage.review import reject_proposal
+
+        proposal = ImportLineProposal.objects.get(
+            pk=request.data.get("proposal"), line=self.get_object()
+        )
+        next_best = reject_proposal(proposal)
+        return Response(ImportLineProposalSerializer(next_best).data if next_best else None)
+
+    @action(detail=True, methods=["post"])
+    def materialize(self, request: Any, pk: Any = None) -> Any:
+        from django_assets.brokerage.review import materialize_new
+
+        transactions = materialize_new(self.get_object())
+        return Response({"transactions": [tx.pk for tx in transactions]})
+
+    @action(detail=True, methods=["post"])
+    def override(self, request: Any, pk: Any = None) -> Any:
+        from django_assets.brokerage.review import override_match
+        from django_assets.core.models import Transaction as CoreTransaction
+
+        target = CoreTransaction.objects.get(pk=request.data.get("transaction"))
+        try:
+            override_match(self.get_object(), target)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"resolution": "confirmed"})
+
+    @action(detail=True, methods=["post"], url_path="confirm-split")
+    def confirm_split(self, request: Any, pk: Any = None) -> Any:
+        """Destructive: requires the type-to-confirm word 'replace'
+        (the client must render the full manual Transaction first)."""
+        from django_assets.brokerage.review import confirm_split as do_split
+
+        group = request.data.get("proposal_group")
+        try:
+            do_split(group, confirmation=request.data.get("confirmation", ""))
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"resolution": "confirmed"})
