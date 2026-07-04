@@ -86,7 +86,7 @@ django_settings_module = "dev_project.settings.test"
 module = "*.migrations.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
-disable_error_code = ["misc"]
+disable_error_code = ["misc", "no-untyped-call"]
 
 # Admin: ModelAdmin.list_display accepts strings naming methods — untypeable.
 [[tool.mypy.overrides]]

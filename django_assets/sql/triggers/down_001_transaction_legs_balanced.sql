@@ -1,0 +1,1 @@
+DROP TRIGGER IF EXISTS transaction_legs_balanced ON django_assets_transactionleg;

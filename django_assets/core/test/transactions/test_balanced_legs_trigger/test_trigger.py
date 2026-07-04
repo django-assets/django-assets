@@ -36,12 +36,11 @@ def test_balanced_multileg_buy_commits(make_tx, accounts, usd, aapl):
 
 
 def test_unbalanced_insert_raises_at_commit_not_statement(make_tx, accounts, aapl):
-    with pytest.raises(IntegrityError):
-        with transaction.atomic():
-            tx = make_tx()
-            leg(tx, accounts["holdings"], aapl, "100")
-            # Deferred: the constraint has NOT fired yet at statement time.
-            assert TransactionLeg.objects.filter(transaction=tx).count() == 1
+    with pytest.raises(IntegrityError), transaction.atomic():
+        tx = make_tx()
+        leg(tx, accounts["holdings"], aapl, "100")
+        # Deferred: the constraint has NOT fired yet at statement time.
+        assert TransactionLeg.objects.filter(transaction=tx).count() == 1
     assert TransactionLeg.objects.count() == 0
 
 
@@ -117,18 +116,34 @@ def test_dec18_domain_rejects_scale_beyond_18(make_tx, accounts, usd):
         leg(tx, accounts["external"], usd, "0.0000000000000000001")
 
 
-def test_leg_account_protect_and_owner_cascade(make_tx, accounts, usd, user):
-    from django.db.models import ProtectedError
+def test_leg_account_restrict_and_owner_cascade(make_tx, accounts, usd, user):
+    """RESTRICT (D-3): isolated account deletion is blocked; deletions that
+    collect the legs via cascade in the same operation proceed."""
+    from django.db.models import RestrictedError
 
     with transaction.atomic():
         tx = make_tx(account_name="cash")
         leg(tx, accounts["cash"], usd, "-100.00")
         leg(tx, accounts["external"], usd, "100.00")
-    # Deleting one account that other transactions' legs reference: blocked.
-    with pytest.raises(ProtectedError):
+    # "external" owns no transactions; its legs are not collected: blocked.
+    with pytest.raises(RestrictedError):
         accounts["external"].delete()
-    # Deleting the owner collects every account, transaction, and leg: clean.
+    # GDPR one-call erasure (ADR-0006): the whole graph collects, trigger
+    # passes because only whole transactions disappear.
     with transaction.atomic():
         user.delete()
+    assert Transaction.objects.count() == 0
+    assert TransactionLeg.objects.count() == 0
+
+
+def test_deleting_perspective_account_takes_its_transactions(make_tx, accounts, usd):
+    """Deleting an account deletes ITS transactions (cascade), and RESTRICT
+    is satisfied because every touched leg dies with its whole transaction."""
+    with transaction.atomic():
+        tx = make_tx(account_name="cash")
+        leg(tx, accounts["cash"], usd, "-100.00")
+        leg(tx, accounts["external"], usd, "100.00")
+    with transaction.atomic():
+        accounts["cash"].delete()
     assert Transaction.objects.count() == 0
     assert TransactionLeg.objects.count() == 0
