@@ -264,10 +264,8 @@ class Trade(models.Model):
                 slice_amount = _slice(leg, ratio, exhausts)
                 if slice_amount == 0:
                     continue
-                if index == 0:
-                    category = "revenue" if leg.amount > 0 else "cost"
-                else:
-                    category = "fee"
+                settlement = "revenue" if leg.amount > 0 else "cost"
+                category = settlement if index == 0 else "fee"
                 allocations.append(self.assign_leg(leg, slice_amount, category=category))
         return allocations
 
