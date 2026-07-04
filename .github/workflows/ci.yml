@@ -37,6 +37,11 @@ jobs:
       matrix:
         postgres: ["12", "17"]
         django: ["~=4.2.0", "~=5.2.0"]
+        exclude:
+          # Django 5.2 requires PostgreSQL >= 14; the PG 12 floor (ADR-0002)
+          # is exercised on the Django 4.2 floor lane.
+          - postgres: "12"
+            django: "~=5.2.0"
     services:
       postgres:
         image: postgres:${{ matrix.postgres }}-alpine
@@ -62,6 +67,8 @@ jobs:
       - run: make ci-test
         env:
           POSTGRES_HOST: 127.0.0.1
+          # uv run would otherwise re-sync to the lockfile, undoing the pin.
+          UV_NO_SYNC: "1"
 
   ddl-modes:
     # ADR-0004 verification lanes (hybrid+migrate, hybrid+--nomigrations,
