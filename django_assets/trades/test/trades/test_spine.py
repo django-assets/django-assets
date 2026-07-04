@@ -9,7 +9,8 @@ from decimal import Decimal
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError, transaction as db_tx
+from django.db import IntegrityError
+from django.db import transaction as db_tx
 from django.test import override_settings
 
 from django_assets.core.models import Transaction, TransactionLeg
@@ -62,9 +63,7 @@ def test_trigger_backstops_raw_orm_over_allocation(trade, sale_leg):
     """Raw ORM bypass: the deferred trigger raises at COMMIT."""
     with pytest.raises(IntegrityError, match="allocat"), db_tx.atomic():
         TradeAllocation.objects.create(trade=trade, leg=sale_leg, amount=D("-600"))
-        TradeAllocation.objects.create(
-            trade=trade, leg=sale_leg, amount=D("-600"), category="more"
-        )
+        TradeAllocation.objects.create(trade=trade, leg=sale_leg, amount=D("-600"), category="more")
 
 
 def test_trigger_rejects_sign_mismatch(trade, sale_leg):

@@ -25,6 +25,7 @@ from django_assets.instruments.currencies.models import CurrencyMeta
 from django_assets.instruments.equities.models import EquityMeta
 from django_assets.instruments.models import CorporateAction
 from django_assets.instruments.options.models import Deliverable, OptionMeta
+from django_assets.trades.models import Trade, TradeAllocation
 
 __all__ = [
     "Account",
@@ -42,6 +43,8 @@ __all__ = [
     "ImportLineProposal",
     "Instrument",
     "OptionMeta",
+    "Trade",
+    "TradeAllocation",
     "Transaction",
     "TransactionImport",
     "TransactionLeg",

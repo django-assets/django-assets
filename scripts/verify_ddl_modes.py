@@ -23,16 +23,18 @@ USER = os.environ.get("POSTGRES_USER", "django_assets")
 PASSWORD = os.environ.get("POSTGRES_PASSWORD", "django_assets")
 ADMIN_DB = os.environ.get("POSTGRES_DB", "django_assets_test")
 
-SIGNATURE_SQL = """
+SIGNATURE_SQL = r"""
 SELECT 'domain:' || t.typname || ':' || pg_get_constraintdef(c.oid)
 FROM pg_type t JOIN pg_constraint c ON c.contypid = t.oid
 WHERE t.typname IN ('dec8', 'dec18')
 UNION ALL
 SELECT 'function:' || proname || ':' || md5(prosrc)
-FROM pg_proc WHERE proname = 'assert_transaction_balanced'
+FROM pg_proc WHERE proname LIKE 'assert\_%'
 UNION ALL
 SELECT 'trigger:' || tgname || ':' || tgdeferrable::text || ':' || tginitdeferred::text
-FROM pg_trigger WHERE tgname = 'transaction_legs_balanced'
+FROM pg_trigger WHERE NOT tgisinternal AND tgname IN (
+    'transaction_legs_balanced', 'trade_allocations_within_leg',
+    'virtual_entries_balanced', 'lot_conservation')
 UNION ALL
 SELECT 'column:' || coalesce(domain_name, data_type)
 FROM information_schema.columns

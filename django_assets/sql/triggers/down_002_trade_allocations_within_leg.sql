@@ -1,0 +1,1 @@
+DROP TRIGGER IF EXISTS trade_allocations_within_leg ON django_assets_tradeallocation;
