@@ -106,17 +106,13 @@ def test_staking_reward_and_airdrop(accounts, btc):
     assert legs_by(reward)[("holdings", "BTC")] == D("0.00012345")
     assert "staking" in reward.description
 
-    drop = templates.airdrop(
-        accounts=accounts, instrument=btc, quantity="1.00000000", timestamp=TS
-    )
+    drop = templates.airdrop(accounts=accounts, instrument=btc, quantity="1.00000000", timestamp=TS)
     assert legs_by(drop)[("holdings", "BTC")] == D("1")
     assert "airdrop" in drop.description
 
 
 def test_hard_fork(accounts, usd, btc):
-    bch = Instrument.objects.create(
-        code="BCH", quantity_decimals=8, price_currency=usd
-    )
+    bch = Instrument.objects.create(code="BCH", quantity_decimals=8, price_currency=usd)
     tx = templates.hard_fork(
         accounts=accounts,
         instrument=btc,

@@ -25,6 +25,7 @@ ROUTING_KEYS = (
     "regulatory_fees",
     "tax_withheld",
     "foreign_tax",
+    "network_fees",
 )
 
 
