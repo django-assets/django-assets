@@ -21,7 +21,7 @@ from django_assets.core.exceptions import (
 )
 from django_assets.core.models import Account, Transaction, TransactionLeg
 
-pytestmark = pytest.mark.django_db
+pytestmark = pytest.mark.ledger
 
 TS = datetime.datetime(2026, 3, 13, 20, 0, tzinfo=datetime.UTC)
 D = Decimal
@@ -60,19 +60,23 @@ def test_transaction_is_none_before_exit(accounts, usd):
 
 
 def test_float_amount_rejected_before_quantization(accounts, usd):
-    """PADR-0006 Rule 3: float is the host's wire convention — reject loudly."""
-    with pytest.raises(TypeError, match="Decimal"):  # the remedy is named
-        with TransactionBuilder(account=accounts["cash"], timestamp=TS) as b:
-            b.add_leg(account=accounts["cash"], instrument=usd, amount=1.1)  # float-ok
+    """PADR-0006 Rule 3 — floats are the host's wire convention; reject loudly."""
+    with (
+        pytest.raises(TypeError, match="Decimal"),  # the remedy is named
+        TransactionBuilder(account=accounts["cash"], timestamp=TS) as b,
+    ):
+        b.add_leg(account=accounts["cash"], instrument=usd, amount=1.1)  # float-ok
     assert Transaction.objects.count() == 0
 
 
 def test_excess_precision_raises_and_persists_nothing(accounts, usd):
     """[D-5] silent truncation is forbidden: USD is 2dp, 1.234 must raise."""
-    with pytest.raises(ExcessPrecisionError):
-        with TransactionBuilder(account=accounts["cash"], timestamp=TS) as b:
-            b.add_leg(account=accounts["cash"], instrument=usd, amount="-1.234")
-            b.add_leg(account=accounts["external"], instrument=usd, amount="1.234")
+    with (
+        pytest.raises(ExcessPrecisionError),
+        TransactionBuilder(account=accounts["cash"], timestamp=TS) as b,
+    ):
+        b.add_leg(account=accounts["cash"], instrument=usd, amount="-1.234")
+        b.add_leg(account=accounts["external"], instrument=usd, amount="1.234")
     assert Transaction.objects.count() == 0
     assert TransactionLeg.objects.count() == 0
 
@@ -81,18 +85,22 @@ def test_same_owner_invariant(accounts, usd):
     """[D-3]: every leg account must share transaction.account.owner."""
     intruder = get_user_model().objects.create_user(username="intruder", password="x")
     foreign = Account.objects.create(owner=intruder, name="foreign")
-    with pytest.raises(MixedOwnershipError, match="foreign"):
-        with TransactionBuilder(account=accounts["cash"], timestamp=TS) as b:
-            b.add_leg(account=accounts["cash"], instrument=usd, amount="-1.00")
-            b.add_leg(account=foreign, instrument=usd, amount="1.00")
+    with (
+        pytest.raises(MixedOwnershipError, match="foreign"),
+        TransactionBuilder(account=accounts["cash"], timestamp=TS) as b,
+    ):
+        b.add_leg(account=accounts["cash"], instrument=usd, amount="-1.00")
+        b.add_leg(account=foreign, instrument=usd, amount="1.00")
     assert Transaction.objects.count() == 0
 
 
 def test_exception_in_block_persists_nothing(accounts, usd):
-    with pytest.raises(RuntimeError, match="abort"):
-        with TransactionBuilder(account=accounts["cash"], timestamp=TS) as b:
-            b.add_leg(account=accounts["cash"], instrument=usd, amount="-1.00")
-            raise RuntimeError("abort")
+    with (
+        pytest.raises(RuntimeError, match="abort"),
+        TransactionBuilder(account=accounts["cash"], timestamp=TS) as b,
+    ):
+        b.add_leg(account=accounts["cash"], instrument=usd, amount="-1.00")
+        raise RuntimeError("abort")
     assert b.transaction is None
     assert Transaction.objects.count() == 0
 
@@ -100,31 +108,36 @@ def test_exception_in_block_persists_nothing(accounts, usd):
 @override_settings(DJANGO_ASSETS_USE_DB_TRIGGERS=False)
 def test_python_fallback_raises_unbalanced_pre_commit(accounts, usd):
     """ADR-0004 matrix, triggers off: the builder is the integrity gate."""
-    with pytest.raises(UnbalancedTransactionError, match="USD"):
-        with TransactionBuilder(account=accounts["cash"], timestamp=TS) as b:
-            b.add_leg(account=accounts["cash"], instrument=usd, amount="-2.00")
-            b.add_leg(account=accounts["external"], instrument=usd, amount="1.00")
+    with (
+        pytest.raises(UnbalancedTransactionError, match="USD"),
+        TransactionBuilder(account=accounts["cash"], timestamp=TS) as b,
+    ):
+        b.add_leg(account=accounts["cash"], instrument=usd, amount="-2.00")
+        b.add_leg(account=accounts["external"], instrument=usd, amount="1.00")
     assert Transaction.objects.count() == 0
 
 
 @override_settings(DJANGO_ASSETS_USE_DB_TRIGGERS=False)
 def test_python_fallback_checks_per_instrument(accounts, usd, eur):
     """Zero total across instruments is still unbalanced per instrument."""
-    with pytest.raises(UnbalancedTransactionError):
-        with TransactionBuilder(account=accounts["cash"], timestamp=TS) as b:
-            b.add_leg(account=accounts["cash"], instrument=usd, amount="-1.00")
-            b.add_leg(account=accounts["eur_cash"], instrument=eur, amount="1.00")
+    with (
+        pytest.raises(UnbalancedTransactionError),
+        TransactionBuilder(account=accounts["cash"], timestamp=TS) as b,
+    ):
+        b.add_leg(account=accounts["cash"], instrument=usd, amount="-1.00")
+        b.add_leg(account=accounts["eur_cash"], instrument=eur, amount="1.00")
     assert Transaction.objects.count() == 0
 
 
-@pytest.mark.ledger
 def test_trigger_mode_unbalanced_surfaces_integrity_error(accounts, usd):
     """With triggers on, the failure shape is IntegrityError at COMMIT [D-9]."""
-    with pytest.raises(IntegrityError, match="not balanced"):
-        with transaction.atomic():
-            with TransactionBuilder(account=accounts["cash"], timestamp=TS) as b:
-                b.add_leg(account=accounts["cash"], instrument=usd, amount="-2.00")
-                b.add_leg(account=accounts["external"], instrument=usd, amount="1.00")
+    with (
+        pytest.raises(IntegrityError, match="Unbalanced transaction"),
+        transaction.atomic(),
+        TransactionBuilder(account=accounts["cash"], timestamp=TS) as b,
+    ):
+        b.add_leg(account=accounts["cash"], instrument=usd, amount="-2.00")
+        b.add_leg(account=accounts["external"], instrument=usd, amount="1.00")
 
 
 @pytest.mark.parametrize(

@@ -106,7 +106,7 @@ def test_value_applies_multiplier(spy_call, usd):
     assert m.amount == D("750.00")
 
 
-def test_value_rejects_float(aapl):
+def test_value_rejects_floats(aapl):  # float-ok
     with pytest.raises(TypeError, match="Decimal"):
         value(100.0, D("175.50"), aapl)  # float-ok
     with pytest.raises(TypeError, match="Decimal"):
