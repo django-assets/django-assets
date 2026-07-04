@@ -83,6 +83,37 @@ class Instrument(models.Model):
         """Quantize a price to this instrument's price scale (D-1)."""
         return self._quantize(price, self.price_decimals, strict)
 
+    @classmethod
+    def resolve(
+        cls,
+        value: str,
+        *,
+        type: str = "ticker",
+        exchange: "Exchange | None" = None,
+        as_of: datetime.date | None = None,
+    ) -> "Instrument":
+        """Exactly one Instrument, or InstrumentNotFoundError /
+        AmbiguousInstrumentError (ADR-0018). Delegates to the resolver
+        configured by DJANGO_ASSETS_INSTRUMENT_RESOLVER.
+        """
+        from django_assets.core.resolver import get_resolver
+
+        return get_resolver().resolve(value, type=type, exchange=exchange, as_of=as_of)
+
+    @classmethod
+    def search(
+        cls,
+        value: str,
+        *,
+        type: str = "ticker",
+        exchange: "Exchange | None" = None,
+        as_of: datetime.date | None = None,
+    ) -> "list[Instrument]":
+        """All matching Instruments, possibly empty (ADR-0018)."""
+        from django_assets.core.resolver import get_resolver
+
+        return get_resolver().search(value, type=type, exchange=exchange, as_of=as_of)
+
     def rename_identifier(
         self,
         old_value: str,
