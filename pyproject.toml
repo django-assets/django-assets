@@ -95,6 +95,11 @@ disable_error_code = ["misc", "no-untyped-call"]
 module = "*.admin"
 ignore_errors = true
 
+# drf-spectacular is optional and has no stubs requirement here.
+[[tool.mypy.overrides]]
+module = "drf_spectacular.*"
+ignore_missing_imports = true
+
 # Test code is not type-checked; correctness comes from the tests passing.
 [[tool.mypy.overrides]]
 module = "*.test.*"

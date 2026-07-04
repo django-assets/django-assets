@@ -13,10 +13,10 @@ SCRIPT = """
 import sys
 
 class BlockDRF:
-    def find_module(self, name, path=None):
-        return self if name.split(".")[0] == "rest_framework" else None
-    def load_module(self, name):
-        raise ImportError(f"{name} blocked: simulating DRF absent")
+    def find_spec(self, name, path=None, target=None):
+        if name.split(".")[0] == "rest_framework":
+            raise ImportError(f"{name} blocked: simulating DRF absent")
+        return None
 
 sys.meta_path.insert(0, BlockDRF())
 
