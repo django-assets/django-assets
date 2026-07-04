@@ -33,9 +33,7 @@ def _check_connection(alias: str, connection: Any) -> list[Error]:
 
 
 @register("database")
-def database_backend_check(
-    app_configs: Sequence[AppConfig] | None, **kwargs: Any
-) -> list[Error]:
+def database_backend_check(app_configs: Sequence[AppConfig] | None, **kwargs: Any) -> list[Error]:
     """Runs with database checks (migrate, `check --database`)."""
     databases: Iterable[str] = kwargs.get("databases") or []
     errors: list[Error] = []
