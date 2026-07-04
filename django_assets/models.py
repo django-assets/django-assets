@@ -12,9 +12,15 @@ from django_assets.core.models import (
     Transaction,
     TransactionLeg,
 )
+from django_assets.instruments.crypto.models import CryptoMeta
+from django_assets.instruments.currencies.models import CurrencyMeta
+from django_assets.instruments.models import CorporateAction
 
 __all__ = [
     "Account",
+    "CorporateAction",
+    "CryptoMeta",
+    "CurrencyMeta",
     "Exchange",
     "Identifier",
     "Instrument",

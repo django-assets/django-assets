@@ -160,6 +160,17 @@ class Identifier(models.Model):
     effective_from = models.DateField(null=True, blank=True)
     effective_to = models.DateField(null=True, blank=True)
 
+    # ADR-0010's documented boundary exception (F-7): the column lives on
+    # core's table but arrives with the instruments milestone; the string
+    # reference keeps core free of any instruments import (ADR-0033 §3).
+    corporate_action = models.ForeignKey(
+        "django_assets.CorporateAction",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="identifiers",
+    )
+
     objects: ClassVar[models.Manager["Identifier"]] = models.Manager()
 
     class Meta:
