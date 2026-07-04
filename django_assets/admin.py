@@ -13,6 +13,7 @@ from django_assets.instruments.admin import (
     CorporateActionAdmin,
     CryptoMetaAdmin,
     CurrencyMetaAdmin,
+    EquityMetaAdmin,
 )
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "CorporateActionAdmin",
     "CryptoMetaAdmin",
     "CurrencyMetaAdmin",
+    "EquityMetaAdmin",
     "ExchangeAdmin",
     "IdentifierAdmin",
     "InstrumentAdmin",

@@ -4,6 +4,7 @@ from django.contrib import admin
 
 from django_assets.instruments.crypto.models import CryptoMeta
 from django_assets.instruments.currencies.models import CurrencyMeta
+from django_assets.instruments.equities.models import EquityMeta
 from django_assets.instruments.models import CorporateAction
 
 
@@ -27,3 +28,10 @@ class CryptoMetaAdmin(admin.ModelAdmin):
     list_display = ("symbol", "instrument", "network", "is_stablecoin", "pegged_to")
     list_filter = ("is_stablecoin", "network")
     search_fields = ("symbol",)
+
+
+@admin.register(EquityMeta)
+class EquityMetaAdmin(admin.ModelAdmin):
+    list_display = ("instrument", "primary_exchange")
+    list_filter = ("primary_exchange",)
+    search_fields = ("instrument__code",)

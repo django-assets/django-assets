@@ -141,13 +141,13 @@ def test_short_shares_capability_advisory(accounts, usd, aapl):
     allows_short=False refuses."""
     # Absent: works (previous test). Present and disallowing: refuses.
     profile = mock.Mock(allows_short=False)
-    with mock.patch(
-        "django_assets.instruments.base.get_account_profile", return_value=profile
+    with (
+        mock.patch("django_assets.instruments.base.get_account_profile", return_value=profile),
+        pytest.raises(CapabilityError, match="allows_short"),
     ):
-        with pytest.raises(CapabilityError, match="allows_short"):
-            templates.short_shares(
-                accounts=accounts, instrument=aapl, quantity="1", price="1.00", timestamp=TS
-            )
+        templates.short_shares(
+            accounts=accounts, instrument=aapl, quantity="1", price="1.00", timestamp=TS
+        )
     assert Transaction.objects.count() == 0
 
 
