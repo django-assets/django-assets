@@ -7,6 +7,8 @@ balances answer report questions directly:
 Holding.current(accounts["commissions"], usd) is lifetime commissions.
 """
 
+from django.contrib.auth.base_user import AbstractBaseUser
+
 from django_assets.brokerage.models import AccountProfile
 from django_assets.core.models import Account
 
@@ -26,7 +28,7 @@ DEFAULT_ACCOUNT_NAMES = {
 
 
 def ensure_standard_accounts(
-    user: object, naming: dict[str, str] | None = None
+    user: AbstractBaseUser, naming: dict[str, str] | None = None
 ) -> dict[str, Account]:
     """Create-or-get the recommended account set for `user` [D-14].
 
