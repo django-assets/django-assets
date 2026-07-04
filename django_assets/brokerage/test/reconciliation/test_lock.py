@@ -68,20 +68,29 @@ def test_delete_parent_transaction_blocked(processed):
 
 
 def test_unflip_edit_rematch_round_trip(processed):
+    from django.db import transaction as db_tx
+
     line = processed.lines.filter(kind="broker_trade").first()
     leg = line.matched_legs.first()
-    original = leg.amount
+    counterpart = leg.transaction.legs.filter(instrument=leg.instrument).exclude(pk=leg.pk).first()
+    original, counter_original = leg.amount, counterpart.amount
 
     line.matched_legs.remove(leg)  # unflip: back to the unmatched pool
-    leg.amount = original + 1
-    leg.save()  # editable now
-    leg.amount = original
-    leg.save()
+    with db_tx.atomic():  # paired edit keeps the trigger satisfied
+        leg.amount = original + 1
+        leg.save()
+        counterpart.amount = counter_original - 1
+        counterpart.save()
+    with db_tx.atomic():  # and revert
+        leg.amount = original
+        leg.save()
+        counterpart.amount = counter_original
+        counterpart.save()
     line.matched_legs.add(leg)  # re-match is normal M2M add
     leg.refresh_from_db()
     with pytest.raises(ReconciledLegLocked):
         leg.amount = original + 1
-        leg.save()
+        leg.save()  # pre_save raises before any write
 
 
 def test_unreconciled_legs_stay_editable(processed, accounts):
@@ -101,9 +110,7 @@ def test_unflip_guard_end_to_end(processed, accounts):
         profile.save()
 
     for line in processed.lines.all():
-        line.matched_legs.set(
-            line.matched_legs.exclude(account=accounts["holdings"])
-        )
+        line.matched_legs.set(line.matched_legs.exclude(account=accounts["holdings"]))
     profile.allows_reconciliation = False
     profile.save()
     profile.refresh_from_db()

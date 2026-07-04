@@ -5,8 +5,8 @@ import pytest
 from django_assets.brokerage.imports import process_batch
 from django_assets.brokerage.test.imports.conftest import (  # noqa: F401
     SCHWAB_CSV,
-    accounts,
     aapl,
+    accounts,
     batch,
     usd,
     user,

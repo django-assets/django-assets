@@ -1,5 +1,5 @@
 from django.apps import AppConfig
-from django.db.models.signals import post_migrate, pre_save
+from django.db.models.signals import post_migrate, pre_delete, pre_save
 
 
 class DjangoAssetsConfig(AppConfig):
@@ -43,4 +43,23 @@ class DjangoAssetsConfig(AppConfig):
         from django_assets.brokerage.schemas import builtin  # noqa: F401
 
         autodiscover_modules("schemas")
-        # 5. Reconciliation signal handlers (ADR-0024) — brokerage B6.
+
+        # 5. Reconciliation lock (ADR-0024, D-17): numeric facts of matched
+        #    legs are broker ground truth; core stays unaware — the lock
+        #    exists only while brokerage's handlers are wired.
+        from django_assets.brokerage.reconciliation import (
+            guard_locked_leg_delete,
+            guard_locked_leg_save,
+        )
+        from django_assets.core.models import TransactionLeg
+
+        pre_save.connect(
+            guard_locked_leg_save,
+            sender=TransactionLeg,
+            dispatch_uid="django_assets.guard_locked_leg_save",
+        )
+        pre_delete.connect(
+            guard_locked_leg_delete,
+            sender=TransactionLeg,
+            dispatch_uid="django_assets.guard_locked_leg_delete",
+        )

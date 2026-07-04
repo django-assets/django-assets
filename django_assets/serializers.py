@@ -17,6 +17,12 @@ except ImportError as exc:  # pragma: no cover — exercised via subprocess test
         'Install the extra: pip install "django-assets[drf]".'
     ) from exc
 
+from django_assets.brokerage.models import (
+    AccountProfile,
+    ImportBatch,
+    ImportLine,
+    TransactionImport,
+)
 from django_assets.core.builder import TransactionBuilder
 from django_assets.core.measure import Measure
 from django_assets.core.models import (
@@ -267,4 +273,63 @@ class OptionMetaSerializer(serializers.ModelSerializer[OptionMeta]):
             "settlement_type",
             "exercise_style",
             "deliverables",
+        ]
+
+
+class AccountProfileSerializer(serializers.ModelSerializer[AccountProfile]):
+    class Meta:
+        model = AccountProfile
+        fields = [
+            "id",
+            "account",
+            "subtype",
+            "allows_short",
+            "allows_margin",
+            "is_tax_advantaged",
+            "allows_reconciliation",
+            "tax_treatment",
+            "metadata",
+        ]
+
+
+class ImportBatchSerializer(serializers.ModelSerializer[ImportBatch]):
+    class Meta:
+        model = ImportBatch
+        fields = [
+            "id",
+            "account",
+            "schema_broker",
+            "schema_document_kind",
+            "schema_format_kind",
+            "schema_version",
+            "period_start",
+            "period_end",
+            "file_name",
+            "file_hash",
+            "imported_at",
+            "transaction_count",
+            "notes",
+            "metadata",
+        ]
+
+
+class TransactionImportSerializer(serializers.ModelSerializer[TransactionImport]):
+    class Meta:
+        model = TransactionImport
+        fields = ["id", "transaction", "batch", "external_id", "content_hash", "source_data"]
+
+
+class ImportLineSerializer(serializers.ModelSerializer[ImportLine]):
+    class Meta:
+        model = ImportLine
+        fields = [
+            "id",
+            "batch",
+            "line_number",
+            "raw_data",
+            "kind",
+            "source_reference",
+            "note",
+            "matched_legs",
+            "metadata",
         ]
