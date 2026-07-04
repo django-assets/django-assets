@@ -38,9 +38,7 @@ def test_changelists_render(admin_client, trade, model_name):
 
 
 def test_trade_change_form_has_inline_and_derived(admin_client, trade):
-    response = admin_client.get(
-        reverse("admin:django_assets_trade_change", args=[trade.pk])
-    )
+    response = admin_client.get(reverse("admin:django_assets_trade_change", args=[trade.pk]))
     body = response.content.decode()
     assert "allocations-TOTAL_FORMS" in body  # allocation inline
     assert "open" in body  # derived status rendered
