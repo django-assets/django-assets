@@ -26,6 +26,8 @@ DEFAULT_ACCOUNT_NAMES = {
     "foreign_tax": "foreign_tax_paid",
     "interest": "interest_earned",
     "network_fees": "network_fees_paid",
+    "account_fees": "account_fees_paid",
+    "wire_fees": "wire_fees_paid",
 }
 
 

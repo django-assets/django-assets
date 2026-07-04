@@ -26,6 +26,10 @@ ROUTING_KEYS = (
     "tax_withheld",
     "foreign_tax",
     "network_fees",
+    "account_fees",
+    "wire_fees",
+    "adr_fees",
+    "interest",
 )
 
 
