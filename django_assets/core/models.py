@@ -183,3 +183,62 @@ class Account(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+
+class Transaction(models.Model):
+    """One atomic ledger event (ADR-0012, ADR-0028).
+
+    `timestamp` is SETTLEMENT time — when effects exist in balances; it
+    drives Portfolio.at/Holding. `trade_timestamp` is EXECUTION time,
+    nullable; callers needing execution time fall back to `timestamp`.
+    `account` is the perspective account used for scoping (imports,
+    delete_range, dedup); legs may touch other accounts of the same owner.
+    """
+
+    account = models.ForeignKey(Account, related_name="transactions", on_delete=models.CASCADE)
+    timestamp = models.DateTimeField(db_index=True)
+    trade_timestamp = models.DateTimeField(null=True, blank=True, db_index=True)
+    origin = models.CharField(max_length=20, default="manual")
+    """Provenance (ADR-0028): "manual" | "import" | host-defined. Set at
+    creation, never rewritten; admin treats it read-only post-create."""
+
+    description = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    objects: ClassVar[models.Manager["Transaction"]] = models.Manager()
+
+    def __str__(self) -> str:
+        return f"#{self.pk} {self.description or self.timestamp}"
+
+
+class TransactionLeg(models.Model):
+    """A signed amount of one instrument in one account (ADR-0020 as amended).
+
+    Legs of one Transaction route across accounts (cash, tracking,
+    counterparty) and must net to zero per instrument at COMMIT — the
+    deferred trigger installed by the DDL layer enforces it. `account`
+    uses RESTRICT (D-3): deleting an account other transactions' legs
+    reference is blocked, but deletions that collect the legs through a
+    cascade in the same operation — the whole-user GDPR erasure
+    (ADR-0006), or deleting a perspective account together with its own
+    transactions — proceed cleanly. The amount column is governed by the
+    dec18 domain.
+    """
+
+    transaction = models.ForeignKey(Transaction, related_name="legs", on_delete=models.CASCADE)
+    account = models.ForeignKey(Account, related_name="legs", on_delete=models.RESTRICT)
+    instrument = models.ForeignKey(Instrument, on_delete=models.PROTECT)
+    amount = models.DecimalField(max_digits=40, decimal_places=18)
+    description = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    objects: ClassVar[models.Manager["TransactionLeg"]] = models.Manager()
+
+    class Meta:
+        indexes = [
+            # Required by the balance trigger's GROUP BY (ADR-0016).
+            models.Index(fields=["transaction", "instrument"], name="leg_tx_instrument_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.amount} {self.instrument} @ {self.account}"

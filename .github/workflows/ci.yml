@@ -71,12 +71,33 @@ jobs:
           UV_NO_SYNC: "1"
 
   ddl-modes:
-    # ADR-0004 verification lanes (hybrid+migrate, hybrid+--nomigrations,
-    # external via psql harness, install_ledger_ddl idempotency). Activates
-    # with core milestone C2, when the DDL exists.
+    # ADR-0004 verification: hybrid migrate == external .sql apply,
+    # install_ledger_ddl idempotency, and the --no-migrations lane where
+    # the post_migrate handler is the only installer.
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: django_assets
+          POSTGRES_PASSWORD: django_assets
+          POSTGRES_DB: django_assets_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U django_assets"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
     steps:
-      - run: echo "Skipped until core C2 lands the DDL (see distribution plan P0.3)."
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: make ddl-verify
+        env:
+          POSTGRES_HOST: 127.0.0.1
 
   build:
     runs-on: ubuntu-latest
