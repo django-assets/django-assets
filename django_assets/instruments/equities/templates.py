@@ -57,6 +57,9 @@ def _cash_distribution(
     instrument: Instrument,
     amount: Amount,
     kind: str,
+    character: str = "unclassified",
+    character_label: str = "",
+    character_source: str = "broker",
     tax_withheld: Amount = 0,
     tax_key: str = "tax_withheld",
     currency: Instrument | None = None,
@@ -69,6 +72,14 @@ def _cash_distribution(
     ccy = cash_currency(instrument, currency)
     gross = to_decimal(amount, param="amount")
     withheld = to_decimal(tax_withheld, param="tax_withheld")
+    from django_assets.core.income import income_character_metadata
+
+    metadata = {
+        **(metadata or {}),
+        **income_character_metadata(character, character_label, character_source),
+        # ADR-0037 event detection: which instrument produced this income
+        "income_instrument_id": instrument.pk,
+    }
     with TransactionBuilder(
         account=routed(accounts, "cash"),
         timestamp=timestamp,
@@ -99,6 +110,51 @@ def foreign_dividend_received(**kwargs: Any) -> Transaction:
 
 def capital_gain_distribution(**kwargs: Any) -> Transaction:
     return _cash_distribution(kind="capital gain distribution", **kwargs)
+
+
+def return_of_capital(
+    *,
+    accounts: AccountMap,
+    instrument: Instrument,
+    amount: Amount,
+    currency: Instrument | None = None,
+    timestamp: datetime.datetime,
+    trade_timestamp: datetime.datetime | None = None,
+    description: str = "",
+    origin: str = "manual",
+    metadata: dict[str, Any] | None = None,
+) -> Transaction:
+    """ADR-0038 §3: a nondividend distribution — cash arrives but it is
+    NOT income; it returns basis. No income tracker leg. The lots
+    rebuild consumes the metadata tag: pro-rata basis reduction across
+    the then-open lots at trade date, excess over remaining basis
+    emitting a capital-gain match (zero-quantity LotMatch — basis
+    recovery is the conservation law's primitive, so no DDL changes)."""
+    from django_assets.core.income import income_character_metadata
+
+    ccy = cash_currency(instrument, currency)
+    value = to_decimal(amount, param="amount")
+    tag_metadata = {
+        **(metadata or {}),
+        **income_character_metadata("return_of_capital", source="broker"),
+        "return_of_capital": {
+            "instrument_id": instrument.pk,
+            "instrument": instrument.code,
+            "amount": str(value),
+        },
+    }
+    with TransactionBuilder(
+        account=routed(accounts, "cash"),
+        timestamp=timestamp,
+        trade_timestamp=trade_timestamp,
+        description=description or f"return of capital {instrument.code}",
+        origin=origin,
+        metadata=tag_metadata,
+    ) as b:
+        b.add_leg(account=routed(accounts, "cash"), instrument=ccy, amount=value)
+        b.add_leg(account=routed(accounts, "issuers"), instrument=ccy, amount=-value)
+    assert b.transaction is not None
+    return b.transaction
 
 
 def dividend_reinvested(

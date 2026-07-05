@@ -28,6 +28,10 @@ def realized_gains(
         matches = matches.filter(closing_leg__transaction__timestamp__year=year)
     rows: list[dict[str, Any]] = []
     for match in matches.order_by("closing_leg__transaction__timestamp", "id"):
+        if match.metadata.get("return_of_capital") and match.realized_gain == 0:
+            # Pure basis reductions don't belong on a 1099-B; the
+            # excess-over-basis portion is a real capital gain and stays.
+            continue
         row: dict[str, Any] = {
             "instrument": match.lot.instrument.code,
             "quantity": match.quantity,
@@ -38,6 +42,7 @@ def realized_gains(
             "realized_gain": match.realized_gain,
             "term": match.term,
             "unlinked": bool(match.lot.metadata.get("unlinked")),
+            "return_of_capital": bool(match.metadata.get("return_of_capital")),
             "wash_sale_disallowed": sum(
                 (adj.disallowed_loss for adj in match.wash_sale_adjustments.all()),
                 Decimal(0),
@@ -108,3 +113,52 @@ def open_lots_report(
         }
         for lot in open_lots(account, instrument)
     ]
+
+
+def income_summary(account: Account, year: "int | None" = None) -> "dict[str, Any]":
+    """1099-DIV-shaped aggregation (ADR-0038 §4) over income-character
+    metadata. `account` is the CASH account the income landed in.
+    Amounts are the cash received per transaction plus any withholding
+    legs booked with it (gross-up); `unclassified` renders as its own
+    line — visible, never folded into ordinary."""
+    from collections import defaultdict
+
+    from django_assets.core.models import Transaction
+
+    transactions = (
+        Transaction.objects.filter(metadata__has_key="income_character", legs__account=account)
+        .distinct()
+        .prefetch_related("legs__account")
+    )
+    if year is not None:
+        transactions = transactions.filter(timestamp__year=year)
+
+    totals: dict[str, Decimal] = defaultdict(Decimal)
+    labels: dict[str, set[str]] = defaultdict(set)
+    for transaction in transactions:
+        character = transaction.metadata["income_character"]
+        cash = Decimal(0)
+        withheld = Decimal(0)
+        for leg in transaction.legs.all():
+            if leg.account_id == account.pk:
+                cash += leg.amount
+            elif leg.account.name in ("tax_withheld", "foreign_tax_paid"):
+                withheld += leg.amount
+        totals[character] += cash + withheld
+        label = transaction.metadata.get("income_label")
+        if label:
+            labels[character].add(label)
+
+    ordinary = totals.get("ordinary", Decimal(0))
+    qualified = totals.get("qualified", Decimal(0))
+    return {
+        "box_1a_total_ordinary": ordinary + qualified,
+        "box_1b_qualified": qualified,
+        "box_2a_capital_gain_distributions": totals.get("capital_gain_lt", Decimal(0))
+        + totals.get("capital_gain_st", Decimal(0)),
+        "box_3_nondividend_distributions": totals.get("return_of_capital", Decimal(0)),
+        "interest": totals.get("interest", Decimal(0)),
+        "exempt": totals.get("exempt", Decimal(0)),
+        "unclassified": totals.get("unclassified", Decimal(0)),
+        "labels": {character: sorted(seen) for character, seen in labels.items()},
+    }

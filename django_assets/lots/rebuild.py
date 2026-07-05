@@ -135,9 +135,30 @@ def _build_scope(account: Account) -> None:
             order.append(leg.transaction_id)
         by_transaction.setdefault(leg.transaction_id, []).append(leg)
 
+    # ADR-0038 §3: ROC transactions carry no holdings leg, so the walk
+    # can't see them — interleave them by timestamp as basis events.
+    roc_events = list(
+        Transaction.objects.filter(
+            metadata__has_key="return_of_capital",
+            legs__account__owner=account.owner,
+        )
+        .distinct()
+        .order_by("timestamp", "id")
+    )
+    roc_index = 0
+
+    def apply_roc_until(boundary: "datetime.datetime | None") -> None:
+        nonlocal roc_index
+        while roc_index < len(roc_events) and (
+            boundary is None or roc_events[roc_index].timestamp <= boundary
+        ):
+            _apply_return_of_capital(walk, roc_events[roc_index])
+            roc_index += 1
+
     for transaction_id in order:
         event_legs = by_transaction[transaction_id]
         transaction = event_legs[0].transaction
+        apply_roc_until(transaction.timestamp)
         tag = transaction.metadata.get("corporate_action")
         if tag and tag.get("type") in ADJUSTING_ACTIONS:
             _apply_ratio_adjustment(
@@ -192,9 +213,56 @@ def _build_scope(account: Account) -> None:
                     metadata = {"unlinked": True}
                 _open_lot(walk, leg, leg.amount, share, metadata=metadata)
 
+    apply_roc_until(None)
+
     for lots in walk.open_lots.values():
         for lot in lots:
             lot.save()
+
+
+def _apply_return_of_capital(walk: "_Walk", transaction: Transaction) -> None:
+    """ADR-0038 §3: reduce the then-open long lots' basis pro-rata by
+    remaining quantity; excess over a lot's remaining basis is capital
+    gain. Booked as ZERO-QUANTITY LotMatch rows — basis recovery is the
+    conservation trigger's primitive, so the law holds unchanged
+    (quantity_remaining untouched; basis_remaining = basis − Σ
+    recovered). Pure basis-reduction rows are tagged and excluded from
+    the 1099-B listing; excess-gain rows appear like any other gain."""
+    tag = transaction.metadata["return_of_capital"]
+    instrument_id = tag.get("instrument_id")
+    amount = Decimal(tag["amount"])
+    lots = [
+        lot
+        for lot in walk.open_lots.get(instrument_id, [])
+        if lot.direction == "long" and lot.quantity_remaining > 0
+    ]
+    total_quantity = sum((lot.quantity_remaining for lot in lots), Decimal(0))
+    if not lots or total_quantity == 0 or amount == 0:
+        return
+    closing_leg = transaction.legs.filter(account__owner=walk.account.owner).order_by("id").first()
+    if closing_leg is None:
+        return
+    left = amount
+    for index, lot in enumerate(lots):
+        if index == len(lots) - 1:
+            share = left  # final lot absorbs rounding remainder
+        else:
+            share = (amount * lot.quantity_remaining / total_quantity).quantize(Q18)
+        left -= share
+        recovered = min(share, lot.cost_basis_remaining)
+        gain = share - recovered
+        lot.cost_basis_remaining -= recovered
+        lot.save()
+        LotMatch.objects.create(
+            lot=lot,
+            closing_leg=closing_leg,
+            quantity=Decimal(0),
+            proceeds=share,
+            basis_recovered=recovered,
+            realized_gain=gain,
+            term=_term(lot.acquired_at, transaction.timestamp),
+            metadata={"return_of_capital": True},
+        )
 
 
 def _open_lot(
@@ -280,7 +348,12 @@ def _close_against(
             # proportional formula can leave non-terminating residue.
             basis_recovered = lot.cost_basis_remaining
         else:
-            basis_recovered = (lot.cost_basis * consumed / lot.quantity).quantize(Q18)
+            # Draw on REMAINING basis: identical to the original ratio
+            # until a non-trade basis event (ADR-0038 ROC) has reduced
+            # per-share basis, after which remaining is the truth.
+            basis_recovered = (
+                lot.cost_basis_remaining * consumed / lot.quantity_remaining
+            ).quantize(Q18)
         if zero_gain:
             proceeds = basis_recovered
             gain = Decimal(0)

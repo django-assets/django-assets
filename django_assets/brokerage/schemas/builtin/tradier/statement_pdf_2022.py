@@ -234,6 +234,8 @@ class TradierStatementPdf2022(ImportSchema):
                     amount=amount,
                     currency=usd,
                     description=f"Dividend {instrument.code}: {text[:70]} (Tradier)",
+                    character=_apex_dividend_class(data.get("detail", []))[0],
+                    character_label=_apex_dividend_class(data.get("detail", []))[1],
                     **common,
                 )
             ]
@@ -291,6 +293,17 @@ class TradierStatementPdf2022(ImportSchema):
         return MatchCriteria(
             date=_at(data["date"]).date(), instrument=ensure_currency("USD"), amount=amount
         )
+
+
+def _apex_dividend_class(detail: "list[str]") -> "tuple[str, str]":
+    """ADR-0038 §2: Apex prints the class as a continuation line."""
+    for line in detail:
+        upper = line.upper()
+        if "NON-QUALIFIED DIVIDEND" in upper or "NONQUALIFIED" in upper:
+            return "ordinary", line[:40]
+        if "QUALIFIED DIVIDEND" in upper:
+            return "qualified", line[:40]
+    return "unclassified", ""
 
 
 def _ensure_security(data: dict[str, Any], usd: Instrument) -> Instrument:

@@ -10,6 +10,7 @@ Holding.current(tracker, currency) answers the report question.
 
 import datetime
 from decimal import Decimal
+from typing import Any
 
 from django_assets.core.builder import TransactionBuilder
 from django_assets.core.intake import to_decimal
@@ -30,6 +31,7 @@ def _two_leg(
     timestamp: datetime.datetime,
     trade_timestamp: datetime.datetime | None,
     origin: str,
+    metadata: "dict[str, Any] | None" = None,
 ) -> Transaction:
     with TransactionBuilder(
         account=perspective,
@@ -37,6 +39,7 @@ def _two_leg(
         trade_timestamp=trade_timestamp,
         description=description,
         origin=origin,
+        metadata=metadata,
     ) as b:
         b.add_leg(account=debit, instrument=instrument, amount=amount)
         b.add_leg(account=credit, instrument=instrument, amount=-amount)
@@ -161,10 +164,16 @@ def interest_earned(
     trade_timestamp: datetime.datetime | None = None,
     description: str = "",
     origin: str = "manual",
+    character: str = "interest",
+    character_label: str = "",
+    character_source: str = "broker",
 ) -> Transaction:
     """Income tracker accumulates negative (credit) balances."""
     value = to_decimal(amount, param="amount")
+    from django_assets.core.income import income_character_metadata
+
     return _two_leg(
+        metadata=income_character_metadata(character, character_label, character_source),
         debit=routed(accounts, "cash"),
         credit=routed(accounts, "interest"),
         instrument=currency,

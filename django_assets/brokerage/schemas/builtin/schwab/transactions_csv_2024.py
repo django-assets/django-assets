@@ -49,6 +49,14 @@ DIVIDEND_ACTIONS = {
     "Pr Yr Cash Div",
     "Cash In Lieu",
 }
+#: ADR-0038 §2: the action column IS the income character.
+DIVIDEND_CHARACTER = {
+    "Qualified Dividend": "qualified",
+    "Special Qual Div": "qualified",
+    "Non-Qualified Div": "ordinary",
+    "Non-Qualified Div Adj": "ordinary",
+    "Pr Yr Cash Div": "ordinary",
+}
 CASH_TRANSFER_ACTIONS = {
     "MoneyLink Transfer",
     "MoneyLink Adj",
@@ -251,6 +259,8 @@ class SchwabTransactionsCsv2024(ImportSchema):
                     amount=net,
                     currency=usd,
                     description=f"{action} {symbol or 'cash'}: {description[:80]} (Schwab)",
+                    character=DIVIDEND_CHARACTER.get(action, "unclassified"),
+                    character_label=action,
                     **common,
                 )
             ]

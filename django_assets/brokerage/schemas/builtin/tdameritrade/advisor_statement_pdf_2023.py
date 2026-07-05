@@ -473,7 +473,7 @@ def _ida_amount(data: dict[str, Any]) -> Decimal:
 
 
 def _qty(token: str) -> Decimal:
-    text = token.strip()
+    text = token.strip().replace("$", "").strip()
     if text in ("-", ""):
         return Decimal(0)
     negative = text.startswith("(") and text.endswith(")")
