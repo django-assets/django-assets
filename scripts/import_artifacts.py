@@ -201,18 +201,47 @@ def _statement_month(path):
 
 
 def import_tradier(root):
+    files = tradier_statement_files(root)
+    if not files:
+        return [], None
+    return _import_apex_lane(files, username="tradier-6ya22794", label="Tradier")
+
+
+def import_ally(root):
+    base = root / "Ally 3LB68464"
+    if not base.exists():
+        return [], None
+    stamped = []
+    for path in base.iterdir():
+        if path.suffix.lower() != ".pdf" or "1099" in path.name:
+            continue
+        month = _statement_month(path)
+        if not month:
+            print(f"WARN unrecognized Ally statement name: {path.name}")
+            continue
+        stamped.append((month, path))
+    stamped.sort()
+    return _import_apex_lane(
+        [path for _month, path in stamped],
+        username="ally-3lb68464",
+        label="Ally",
+    )
+
+
+def _import_apex_lane(files, *, username, label):
+    """Shared lane for Apex-layout statements (Tradier, Ally). Cash
+    truth is NET ACCOUNT BALANCE plus the money-market sweep pair —
+    Ally sweeps everything, so NET alone always reads $0.00."""
     from django.contrib.auth import get_user_model
 
     from django_assets.brokerage.accounts import ensure_standard_accounts
+    from django_assets.brokerage.dedup import is_period_imported
     from django_assets.brokerage.imports import process_batch
     from django_assets.brokerage.models import AccountProfile, ImportBatch
     from django_assets.brokerage.schemas.instruments import ensure_currency
     from django_assets.core.queries import Holding
 
-    files = tradier_statement_files(root)
-    if not files:
-        return [], None
-    user, _ = get_user_model().objects.get_or_create(username="tradier-6ya22794")
+    user, _ = get_user_model().objects.get_or_create(username=username)
     accounts = ensure_standard_accounts(user)
     for key in ("cash", "holdings"):
         AccountProfile.objects.get_or_create(
@@ -220,15 +249,13 @@ def import_tradier(root):
         )
     usd = ensure_currency("USD")
 
-    from django_assets.brokerage.dedup import is_period_imported
-
     results = []
     for path in files:
         period = file_period(Path(_statement_month(path)))
         if period and is_period_imported(accounts["cash"], "tradier", "statement", *period):
             results.append(
                 {
-                    "file": f"Tradier/{_statement_month(path)} {path.name[:34]}",
+                    "file": f"{label}/{_statement_month(path)} {path.name[:34]}",
                     "status": "SKIP (period already imported)",
                 }
             )
@@ -246,12 +273,11 @@ def import_tradier(root):
         before = Holding.current(accounts["cash"], usd)
         process_batch(batch, path.read_bytes())
         after = Holding.current(accounts["cash"], usd)
+        balances = batch.metadata.get("balances", {})
         opening = closing = None
-        line = batch.lines.first()
-        if line is not None:
-            balances = line.raw_data.get("balances", {})
-            opening = Decimal(balances["opening"]) if balances.get("opening") else None
-            closing = Decimal(balances["closing"]) if balances.get("closing") else None
+        if balances.get("opening") is not None and balances.get("closing") is not None:
+            opening = Decimal(balances["opening"]) + Decimal(balances.get("mm_opening", "0"))
+            closing = Decimal(balances["closing"]) + Decimal(balances.get("mm_closing", "0"))
         stalled = batch.lines.filter(kind__startswith="broker_", matched_legs__isnull=True).count()
         # The file-level truth: this statement's activity must move cash
         # by exactly closing − opening. Continuity breaks (a missing
@@ -264,7 +290,7 @@ def import_tradier(root):
         status = "FAIL" if not ok else ("GAP (missing prior stmt)" if gap else "OK")
         results.append(
             {
-                "file": f"Tradier/{_statement_month(path)} {path.name[:34]}",
+                "file": f"{label}/{_statement_month(path)} {path.name[:34]}",
                 "status": status,
                 "lines": batch.lines.count(),
                 "transactions": batch.transaction_count,
@@ -598,6 +624,217 @@ def import_robinhood_statements(root: Path) -> "list[tuple[list, dict, str]]":
     return lanes
 
 
+def import_investinvol(root: Path):
+    """TDA advisor-managed statements (Invest In Vol): absolute cash
+    acceptance — after each statement the cash holding must equal the
+    statement's TOTAL CASH & CASH ALTERNATIVES ($0 once the account
+    closes and transfers out)."""
+    from django.contrib.auth import get_user_model
+
+    from django_assets.brokerage.accounts import ensure_standard_accounts
+    from django_assets.brokerage.dedup import is_period_imported
+    from django_assets.brokerage.imports import process_batch
+    from django_assets.brokerage.models import AccountProfile, ImportBatch
+    from django_assets.brokerage.schemas.instruments import ensure_currency
+    from django_assets.core.queries import Holding
+
+    base = root / "InvestInVol"
+    if not base.exists():
+        return [], None
+    files = sorted(
+        (path for path in base.iterdir() if path.suffix.lower() == ".pdf"),
+        key=lambda p: p.stem,
+    )
+    user, _ = get_user_model().objects.get_or_create(username="investinvol-947365774")
+    accounts = ensure_standard_accounts(user)
+    for key in ("cash", "holdings"):
+        AccountProfile.objects.get_or_create(
+            account=accounts[key], defaults={"allows_reconciliation": True}
+        )
+    usd = ensure_currency("USD")
+
+    results = []
+    for path in files:
+        month = re.search(r"(\d{4})-(\d{2})", path.stem)
+        period = file_period(Path(month.group(0))) if month else None
+        if period and is_period_imported(
+            accounts["cash"], "tdameritrade", "advisor-statement", *period
+        ):
+            results.append({"file": f"IIV/{path.name}", "status": "SKIP (period already imported)"})
+            continue
+        batch = ImportBatch.objects.create(
+            account=accounts["cash"],
+            schema_broker="tdameritrade",
+            schema_document_kind="advisor-statement",
+            schema_format_kind="pdf",
+            schema_version="2023.1",
+            period_start=period[0] if period else None,
+            period_end=period[1] if period else None,
+            file_name=path.name,
+        )
+        before = Holding.current(accounts["cash"], usd)
+        process_batch(batch, path.read_bytes())
+        after = Holding.current(accounts["cash"], usd)
+        balances = batch.metadata.get("balances", {})
+        closing = Decimal(balances["closing"]) if balances.get("closing") else None
+        stalled = batch.lines.filter(kind__startswith="broker_", matched_legs__isnull=True).count()
+        ok = stalled == 0 and closing is not None and after == closing
+        results.append(
+            {
+                "file": f"IIV/{path.name}",
+                "status": "OK" if ok else "FAIL",
+                "lines": batch.lines.count(),
+                "transactions": batch.transaction_count,
+                "cash_delta": str(after - before),
+                "expected": f"(to close {closing})",
+                "stalled_lines": stalled,
+            }
+        )
+    return results, accounts
+
+
+def import_homebroker(root: Path):
+    """Home Broker yearly resúmenes (Invertir en Bolsa), one lane per
+    comitente. Triple-currency acceptance: ARS, USD and the DOLARUSA
+    foreign-custody subaccount each move by exactly close − open."""
+    from django.contrib.auth import get_user_model
+
+    from django_assets.brokerage.accounts import ensure_standard_accounts
+    from django_assets.brokerage.dedup import is_period_imported
+    from django_assets.brokerage.imports import process_batch
+    from django_assets.brokerage.models import AccountProfile, ImportBatch
+    from django_assets.brokerage.schemas.instruments import ensure_currency
+    from django_assets.core.queries import Holding
+
+    base = root / "IEB"
+    if not base.exists():
+        return []
+    groups: dict = {}
+    for path in sorted(base.iterdir()):
+        if path.suffix.lower() != ".pdf":
+            continue
+        match = re.match(r"^(\d{4}) RESUMEN_(\d+)$", path.stem)
+        if not match:
+            print(f"WARN unrecognized Home Broker statement name: {path.name}")
+            continue
+        groups.setdefault(match.group(2), []).append((match.group(1), path))
+
+    lanes = []
+    for comitente, stamped in sorted(groups.items()):
+        stamped.sort()
+        user, _ = get_user_model().objects.get_or_create(username=f"homebroker-{comitente}")
+        accounts = ensure_standard_accounts(user)
+        for key in ("cash", "holdings"):
+            AccountProfile.objects.get_or_create(
+                account=accounts[key], defaults={"allows_reconciliation": True}
+            )
+        currencies = {
+            "ars": ensure_currency("ARS"),
+            "usd": ensure_currency("USD"),
+            "ext": ensure_currency("DOLARUSA"),
+        }
+
+        results = []
+        for year, path in stamped:
+            period = file_period(Path(year))
+            assert period is not None
+            if is_period_imported(accounts["cash"], "homebroker", "resumen", *period):
+                results.append(
+                    {
+                        "file": f"IEB/{comitente}/{path.name}",
+                        "status": "SKIP (period already imported)",
+                    }
+                )
+                continue
+            batch = ImportBatch.objects.create(
+                account=accounts["cash"],
+                schema_broker="homebroker",
+                schema_document_kind="resumen",
+                schema_format_kind="pdf",
+                schema_version="2018.1",
+                period_start=period[0],
+                period_end=period[1],
+                file_name=path.name,
+            )
+            before = {
+                key: Holding.current(accounts["cash"], instrument)
+                for key, instrument in currencies.items()
+            }
+            process_batch(batch, path.read_bytes())
+            after = {
+                key: Holding.current(accounts["cash"], instrument)
+                for key, instrument in currencies.items()
+            }
+            balances = batch.metadata.get("balances", {})
+            stalled = batch.lines.filter(
+                kind__startswith="broker_", matched_legs__isnull=True
+            ).count()
+            deltas, expects, ok, gap = [], [], stalled == 0, False
+            for key in ("ars", "usd", "ext"):
+                delta = after[key] - before[key]
+                expected = Decimal(balances.get(f"{key}_close", "0")) - Decimal(
+                    balances.get(f"{key}_open", "0")
+                )
+                deltas.append(f"{key}={delta}")
+                expects.append(f"{key}={expected}")
+                if delta != expected:
+                    ok = False
+                if before[key] != Decimal(balances.get(f"{key}_open", "0")):
+                    gap = True
+            status = "FAIL" if not ok else ("GAP (missing prior stmt)" if gap else "OK")
+            results.append(
+                {
+                    "file": f"IEB/{comitente}/{path.name}",
+                    "status": status,
+                    "lines": batch.lines.count(),
+                    "transactions": batch.transaction_count,
+                    "cash_delta": " ".join(deltas),
+                    "expected": " ".join(expects),
+                    "stalled_lines": stalled,
+                }
+            )
+        lanes.append((results, accounts, comitente))
+    return lanes
+
+
+EXPECTED_FORMATS = [
+    # (glob under artifacts/, expected broker/document_kind key)
+    ("Robinhood/Robinhood/*/*.csv", "robinhood/activity"),
+    ("Robinhood/Robinhood/**/2*.pdf", "robinhood/statement"),
+    ("Schwab/Schwab/*/*.csv", "schwab/transactions"),
+    ("Schwab/Schwab/*/Brokerage Statement*", "schwab/statement"),
+    ("TD Ameritrade/TD Ameritrade/**/*tatement*", "tdameritrade/statement"),
+    ("TD Ameritrade/TD Ameritrade/**/2024_*.PDF", "tdameritrade/statement"),
+    ("Tradier*/**/*.pdf", "tradier/statement"),
+    ("Ally*/*.pdf", "tradier/statement"),
+    ("InvestInVol/*.pdf", "tdameritrade/advisor-statement"),
+    ("IEB/*.PDF", "homebroker/resumen"),
+]
+
+
+def detect_audit(root: Path) -> "list[dict]":
+    """Step-one acceptance: every importable artifact file must be
+    recognized by detect_format as exactly the schema its lane uses."""
+    from django_assets.brokerage.schemas.detection import detect_format
+
+    results = []
+    for pattern, expected in EXPECTED_FORMATS:
+        for path in sorted(root.glob(pattern)):
+            name = path.name
+            if "1099" in name or "5498" in name or path.suffix.lower() not in (".pdf", ".csv"):
+                continue
+            if path.parent.name == "256-639152 Rollover IRA":
+                continue  # scanned images, no text layer (known SKIPs)
+            try:
+                schema = detect_format(name, path.read_bytes())
+                got = f"{schema.broker}/{schema.document_kind}"
+                status = "OK" if got == expected else f"FAIL (got {got})"
+            except Exception as exc:
+                status = f"FAIL ({type(exc).__name__}: {exc})"[:90]
+            results.append({"file": f"detect:{path.relative_to(root)}", "status": status})
+    return results
+
+
 def reset() -> None:
     """Purge every artifact-runner user (cascades accounts, batches,
     transactions, lots — the whole graph) for a clean acceptance run."""
@@ -606,7 +843,7 @@ def reset() -> None:
     from django_assets.brokerage.models import ImportLine
 
     users = get_user_model().objects.filter(
-        username__regex=r"^(robinhood|schwab|td-ameritrade|tradier)-"
+        username__regex=r"^(robinhood|schwab|td-ameritrade|tradier|ally|investinvol|homebroker)-"
     )
     for user in users:
         for line in ImportLine.objects.filter(batch__account__owner=user):
@@ -632,6 +869,17 @@ def main() -> int:
     all_results.extend(tradier_results)
     if tradier_accounts:
         downstream.append(verify_downstream("Tradier/6YA22794", tradier_accounts))
+    ally_results, ally_accounts = import_ally(root)
+    all_results.extend(ally_results)
+    if ally_accounts:
+        downstream.append(verify_downstream("Ally/3LB68464", ally_accounts))
+    iiv_results, iiv_accounts = import_investinvol(root)
+    all_results.extend(iiv_results)
+    if iiv_accounts:
+        downstream.append(verify_downstream("IIV/947365774", iiv_accounts))
+    for ieb_results, ieb_accounts, comitente in import_homebroker(root):
+        all_results.extend(ieb_results)
+        downstream.append(verify_downstream(f"IEB/{comitente}", ieb_accounts))
     for slug, files in tda_account_files(root).items():
         tda_results, tda_accounts = import_tda_account(slug, files)
         all_results.extend(tda_results)
@@ -656,6 +904,11 @@ def main() -> int:
         if any("lines" in result for result in stmt_results):
             downstream.append(verify_downstream(f"RH-stmt/{folder_name}", stmt_accounts))
 
+    detect_results = detect_audit(root)
+    all_results.extend(detect_results)
+    detect_ok = sum(1 for r in detect_results if r["status"] == "OK")
+    print(f"format detection: {detect_ok}/{len(detect_results)} files recognized correctly")
+
     failures = 0
     for result in all_results:
         line = f"{result['status']:22s} {result['file']}"
@@ -665,7 +918,7 @@ def main() -> int:
                 f"cash={result['cash_delta']} expected={result['expected']}"
             )
         print(line)
-        if result["status"] == "FAIL":
+        if result["status"].startswith("FAIL"):
             failures += 1
     print("\n=== downstream (lots/portfolio) ===")
     for summary in downstream:

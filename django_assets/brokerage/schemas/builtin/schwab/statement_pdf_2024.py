@@ -140,6 +140,13 @@ def _pop_tail(tokens: "list[str]") -> "list[str]":
 class SchwabStatementPdf2024(ImportSchema):
     definition = {"layout": "nested", "carrier": "schwab-statement-text"}
 
+    @classmethod
+    def sniff(cls, sample: str) -> bool:
+        """The kerning-collapsed BeginningCash*asof summary header."""
+        return "BeginningCash*asof" in sample or (
+            "Schwab" in sample and "Transaction Details" in sample
+        )
+
     def parse_batch(self, batch: Any, source: Any) -> Any:
         from django_assets.brokerage.models import ImportLine
 
