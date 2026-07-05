@@ -154,6 +154,69 @@ class TdAmeritradeStatementPdf2012(ImportSchema):
         """Retail TDA statements carry a Cash Activity Summary page."""
         return "Cash Activity Summary" in sample and "Independent Advisor" not in sample
 
+    def parse_positions(self, source: Any) -> "list[Any]":
+        """ADR-0036: closing holdings from the "Account Positions"
+        section. Rows read NAME… <SYM|-> <qty> <price> …; shorts carry
+        the trailing-minus quantity and option identity rides a
+        continuation line ("CCJ Feb 17 23 28.0 C")."""
+        from django_assets.brokerage.schemas.positions import (
+            StatementPosition,
+            option_canonical_code,
+        )
+
+        text = source if isinstance(source, str) else extract_text(source)
+        positions: list[Any] = []
+        in_section = False
+        current: Any = None
+        row_re = re.compile(
+            r"^(?P<name>.+?) (?P<sym>[A-Z][A-Z0-9]{0,5}|-) "
+            r"(?P<qty>[\d,]+(?:\.\d+)?-?) \$? ?(?P<price>[\d,]+\.\d+)"
+        )
+        option_re = re.compile(
+            r"^(?P<u>[A-Z][A-Z0-9.]*) (?P<mon>[A-Z][a-z]{2}) (?P<d>\d{1,2}) "
+            r"(?P<yy>\d{2}) (?P<strike>[\d.]+) (?P<r>[CP])$"
+        )
+
+        def finish() -> None:
+            nonlocal current
+            if current is None:
+                return
+            record, current = current, None
+            positions.append(record)
+
+        for raw in text.splitlines():
+            line = raw.strip()
+            if line == "Account Positions":
+                in_section = True
+                continue
+            if line == "Account Activity" or line.startswith("Total Account Positions"):
+                finish()
+                in_section = False
+                continue
+            if not in_section:
+                continue
+            match = row_re.match(line)
+            if match and not line.startswith(("Total", "Symbol", "Investment")):
+                finish()
+                quantity = _qty(match["qty"])
+                current = StatementPosition(
+                    quantity=quantity,
+                    ticker="" if match["sym"] == "-" else match["sym"],
+                    description=match["name"].strip(),
+                )
+                continue
+            if current is not None and line:
+                opt = option_re.match(line)
+                if opt:
+                    current.option_code = option_canonical_code(
+                        opt["u"],
+                        datetime.date(2000 + int(opt["yy"]), MONTHS[opt["mon"]], int(opt["d"])),
+                        Decimal(opt["strike"]),
+                        opt["r"],
+                    )
+        finish()
+        return positions
+
     def parse_batch(self, batch: Any, source: Any) -> Any:
         from django_assets.brokerage.models import ImportLine
 

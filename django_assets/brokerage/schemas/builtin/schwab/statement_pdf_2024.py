@@ -147,6 +147,83 @@ class SchwabStatementPdf2024(ImportSchema):
             "Schwab" in sample and "Transaction Details" in sample
         )
 
+    def parse_positions(self, source: Any) -> "list[Any]":
+        """ADR-0036: closing holdings from the "Positions - <Category>"
+        pages (Equities / Exchange Traded Funds / Options / …).
+        Shorts print "(1.0000)S"; option identity is split across the
+        row (SYMBOL CALL…/$strike) and EXP/right continuations."""
+        from django_assets.brokerage.schemas.positions import (
+            StatementPosition,
+            option_canonical_code,
+        )
+
+        text = source if isinstance(source, str) else extract_text(source)
+        positions: list[Any] = []
+        section = ""
+        current: Any = None
+        qty_re = re.compile(r"^\(?([\d,]+\.\d{4})\)?(S?)$")
+        row_re = re.compile(r"^(?P<sym>[A-Z][A-Z.]{0,5}) (?P<rest>.+)$")
+
+        def finish() -> None:
+            nonlocal current
+            if current is None:
+                return
+            pos, current = current, None
+            if pos.get("is_option"):
+                expiry, right, strike = pos.get("expiry"), pos.get("right"), pos.get("strike")
+                if expiry and right and strike is not None:
+                    pos["record"].option_code = option_canonical_code(
+                        pos["record"].ticker, _us_date(expiry), strike, right
+                    )
+                    pos["record"].ticker = ""  # the option, not the underlying
+            positions.append(pos["record"])
+
+        for raw in text.splitlines():
+            line = raw.strip()
+            section_match = re.match(r"^Positions - (?P<cat>[A-Za-z &]+)$", line)
+            if section_match:
+                finish()
+                cat = section_match["cat"]
+                section = "" if cat in ("Summary",) else cat
+                continue
+            if line.replace(" ", "").startswith("Total") or line.startswith(
+                ("Transaction Detail", "Estimated", "Symbol Description")
+            ):
+                finish()
+                if line.replace(" ", "").startswith("Total"):
+                    section = ""
+                continue
+            if not section:
+                continue
+            match = row_re.match(line)
+            tokens = line.split()
+            qty_hits = [(i, m) for i, t in enumerate(tokens) if (m := qty_re.match(t))]
+            if match and qty_hits:
+                finish()
+                i, qmatch = qty_hits[0]
+                quantity = Decimal(qmatch.group(1).replace(",", ""))
+                if qmatch.group(2) == "S" or tokens[i].startswith("("):
+                    quantity = -quantity
+                desc = " ".join(tokens[1:i]).rstrip(",")
+                current = {
+                    "record": StatementPosition(
+                        quantity=quantity, ticker=match["sym"], description=desc
+                    ),
+                    "is_option": desc.startswith(("CALL", "PUT")),
+                }
+                if current["is_option"]:
+                    current["right"] = "C" if desc.startswith("CALL") else "P"
+                continue
+            if current is not None and line:
+                exp = EXP_CONT.search(line)
+                if exp and "expiry" not in current:
+                    current["expiry"] = exp["expiry"] or _expand_short_date(exp["short"])
+                strike = re.search(r"\$(\d+(?:\.\d+)?)", line)
+                if strike and "strike" not in current:
+                    current["strike"] = Decimal(strike.group(1))
+        finish()
+        return positions
+
     def parse_batch(self, batch: Any, source: Any) -> Any:
         from django_assets.brokerage.models import ImportLine
 

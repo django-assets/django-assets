@@ -76,6 +76,25 @@ class TradierStatementPdf2022(ImportSchema):
         """Apex statements print an upper-case NET ACCOUNT BALANCE pair."""
         return "NET ACCOUNT BALANCE" in sample
 
+    def parse_positions(self, source: Any) -> "list[Any]":
+        """ADR-0036: closing holdings from the EQUITIES / OPTIONS table
+        (the same rows the ticker-recovery pass reads)."""
+        from django_assets.brokerage.schemas.positions import StatementPosition
+
+        text = source if isinstance(source, str) else extract_text(source)
+        positions: list[Any] = []
+        for raw in text.splitlines():
+            holding = HOLDING_LINE.match(raw.strip())
+            if holding and holding["symbol"] not in ("M", "C"):
+                positions.append(
+                    StatementPosition(
+                        quantity=Decimal(holding["quantity"].replace(",", "")),
+                        ticker=holding["symbol"],
+                        description=holding["name"].strip(),
+                    )
+                )
+        return positions
+
     def parse_batch(self, batch: Any, source: Any) -> Any:
         """source: PDF bytes / file-like, or already-extracted statement
         text (str) — the latter serves tests and text-side tooling."""
