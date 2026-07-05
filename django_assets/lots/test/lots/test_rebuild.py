@@ -96,14 +96,10 @@ def test_staleness_marks_pair_and_auto_rebuild(accounts, aapl, usd, buy):
     from django_assets.lots.queries import open_lots
 
     buy("100", "10.00", at(0))
-    assert StaleLotScope.objects.filter(
-        account=accounts["holdings"], instrument=aapl
-    ).exists()
+    assert StaleLotScope.objects.filter(account=accounts["holdings"], instrument=aapl).exists()
     rows = open_lots(accounts["holdings"])  # auto-rebuild on query
     assert len(rows) == 1
-    assert not StaleLotScope.objects.filter(
-        account=accounts["holdings"], instrument=aapl
-    ).exists()
+    assert not StaleLotScope.objects.filter(account=accounts["holdings"], instrument=aapl).exists()
 
     buy("10", "11.00", at(1))  # ledger edit re-marks exactly the pair
     stale = StaleLotScope.objects.filter(account=accounts["holdings"])

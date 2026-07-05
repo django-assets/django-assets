@@ -100,9 +100,7 @@ def test_option_multiplier_in_cash_attribution(accounts, usd):
         strike=D("200"),
         right="C",
     )
-    opt.buy_option(
-        accounts=accounts, instrument=call, contracts="2", price="5.00", timestamp=at(0)
-    )
+    opt.buy_option(accounts=accounts, instrument=call, contracts="2", price="5.00", timestamp=at(0))
     opt.sell_option(
         accounts=accounts, instrument=call, contracts="2", price="7.00", timestamp=at(5)
     )
