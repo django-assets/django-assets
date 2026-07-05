@@ -129,6 +129,13 @@ def _statement_lines(source: Any) -> "list[str]":
 class RobinhoodStatementPdf2020(ImportSchema):
     definition = {"layout": "nested", "carrier": "robinhood-statement-text"}
 
+    @classmethod
+    def sniff(cls, sample: str) -> bool:
+        """Robinhood monthly statements brand every page."""
+        return "Robinhood" in sample and (
+            "Account Activity" in sample or "Portfolio Value" in sample
+        )
+
     def parse_batch(self, batch: Any, source: Any) -> Any:
         from django_assets.brokerage.models import ImportLine
 

@@ -58,6 +58,13 @@ class ImportSchema:
         pure-informational schemas may leave this unimplemented."""
         raise NotImplementedError
 
+    @classmethod
+    def sniff(cls, sample: str) -> bool:
+        """Format fingerprint for upload detection: does this text
+        sample (decoded CSV / extracted PDF text) look like this
+        schema's document? Default: not auto-detectable."""
+        return False
+
 
 class SchemaRegistry:
     def __init__(self) -> None:
@@ -77,6 +84,10 @@ class SchemaRegistry:
                 f"append-only — register a new version instead"
             )
         self._schemas[key] = schema_class()
+
+    def all(self) -> "list[ImportSchema]":
+        """Every registered schema, deterministically ordered by key."""
+        return [self._schemas[key] for key in sorted(self._schemas)]
 
     def get(self, broker: str, document_kind: str, format_kind: str, version: str) -> ImportSchema:
         key = (broker, document_kind, format_kind, version)

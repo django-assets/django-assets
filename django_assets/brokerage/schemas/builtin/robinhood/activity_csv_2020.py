@@ -59,6 +59,11 @@ CASH_MOVE_CODES = {"ACH", "RTP"}
 class RobinhoodActivityCsv2020(ImportSchema):
     definition = {"layout": "tabular", "columns": COLUMNS}
 
+    @classmethod
+    def sniff(cls, sample: str) -> bool:
+        """The activity-CSV header row is the fingerprint."""
+        return "Activity Date" in sample[:200] and "Trans Code" in sample[:200]
+
     def parse_batch(self, batch: Any, source: Any) -> Any:
         from django_assets.brokerage.models import ImportLine
 

@@ -149,6 +149,11 @@ def _find_balances(lines: "list[str]") -> dict[str, str]:
 class TdAmeritradeStatementPdf2012(ImportSchema):
     definition = {"layout": "nested", "carrier": "tda-statement-text"}
 
+    @classmethod
+    def sniff(cls, sample: str) -> bool:
+        """Retail TDA statements carry a Cash Activity Summary page."""
+        return "Cash Activity Summary" in sample and "Independent Advisor" not in sample
+
     def parse_batch(self, batch: Any, source: Any) -> Any:
         from django_assets.brokerage.models import ImportLine
 

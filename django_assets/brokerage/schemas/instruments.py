@@ -36,10 +36,10 @@ def parse_money(value: str) -> Decimal:
     text = value.strip()
     if not text or text == "-":  # dash = empty cell on statement PDFs
         return Decimal(0)
+    text = text.replace("$", "").replace(",", "").strip()  # "$(1.23)" renders too
     negative = text.startswith("(") and text.endswith(")")
     if negative:
         text = text[1:-1]
-    text = text.replace("$", "").replace(",", "")
     amount = Decimal(text)
     return -amount if negative else amount
 

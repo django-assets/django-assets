@@ -74,6 +74,11 @@ def _kind(action: str) -> str:
 class SchwabTransactionsCsv2024(ImportSchema):
     definition = {"layout": "tabular", "columns": COLUMNS}
 
+    @classmethod
+    def sniff(cls, sample: str) -> bool:
+        """The transactions-CSV header row is the fingerprint."""
+        return '"Date","Action","Symbol"' in sample[:200] and "Fees & Comm" in sample[:200]
+
     def parse_batch(self, batch: Any, source: Any) -> Any:
         from django_assets.brokerage.models import ImportLine
 

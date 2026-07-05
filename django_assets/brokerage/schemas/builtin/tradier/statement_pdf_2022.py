@@ -15,6 +15,7 @@ harnesses can assert cash to the cent.
 import datetime
 import re
 from collections.abc import Callable
+from decimal import Decimal
 from typing import Any
 
 from django_assets.brokerage.accounts import ensure_standard_accounts
@@ -26,9 +27,14 @@ from django_assets.instruments.equities import templates as eq
 from django_assets.instruments.equities.models import EquityMeta
 
 RECORD = re.compile(
-    r"^(?P<type>BOUGHT|SOLD|DIVIDEND|INTEREST|ACH|JOURNAL|WIRE|CANCEL)"
+    r"^(?P<type>BOUGHT|SOLD|DIVIDEND|INTEREST|ACH|JOURNAL|WIRE|CANCEL"
+    r"|REINVEST|SWEEP|REDEEMED|TRANSFER)"
     r" (?P<date>\d{2}/\d{2}/\d{2}) (?P<account_type>[A-Z]) (?P<rest>.*)$"
 )
+#: Internal pool moves: money-market sweeps and cash↔margin journals.
+#: The harness tracks combined cash, so these are evidence only.
+INTERNAL_TYPES = {"SWEEP", "REDEEMED", "TRANSFER"}
+MM_BALANCE = re.compile(r"^Money Market funds (?P<opening>[\d,.()$-]+) (?P<closing>[\d,.()$-]+)")
 SECTIONS = {
     "BUY / SELL TRANSACTIONS": "trade",
     "DIVIDENDS AND INTEREST": "income",
@@ -65,6 +71,11 @@ def _tail_numbers(rest: str) -> "tuple[str, list[str]]":
 class TradierStatementPdf2022(ImportSchema):
     definition = {"layout": "nested", "carrier": "apex-statement-text"}
 
+    @classmethod
+    def sniff(cls, sample: str) -> bool:
+        """Apex statements print an upper-case NET ACCOUNT BALANCE pair."""
+        return "NET ACCOUNT BALANCE" in sample
+
     def parse_batch(self, batch: Any, source: Any) -> Any:
         """source: PDF bytes / file-like, or already-extracted statement
         text (str) — the latter serves tests and text-side tooling."""
@@ -81,10 +92,21 @@ class TradierStatementPdf2022(ImportSchema):
                 balances = {
                     "opening": str(parse_money(match["opening"])),
                     "closing": str(parse_money(match["closing"])),
+                    **balances,
                 }
+            mm = MM_BALANCE.match(line.strip())
+            if mm:
+                balances["mm_opening"] = str(parse_money(mm["opening"]))
+                balances["mm_closing"] = str(parse_money(mm["closing"]))
             holding = HOLDING_LINE.match(line.strip())
             if holding and holding["symbol"] not in ("M", "C"):
                 symbols[holding["name"].strip()] = holding["symbol"]
+
+        # Zero-record months still need their balances for acceptance.
+        batch.metadata["balances"] = balances
+        batch.metadata["recognized"] = bool(balances)
+        if batch.pk:
+            batch.save(update_fields=["metadata"])
 
         number = 0
         section = None
@@ -99,11 +121,12 @@ class TradierStatementPdf2022(ImportSchema):
             payload["balances"] = balances
             name = payload["text"].strip()
             payload["symbol"] = symbols.get(name, "")
+            prefix = "note" if payload["type"] in INTERNAL_TYPES else "broker"
             return ImportLine(
                 batch=batch,
                 line_number=number,
                 raw_data=payload,
-                kind=f"broker_{payload['type'].lower()}",
+                kind=f"{prefix}_{payload['type'].lower()}",
                 source_reference=f"{batch.file_name}#{number}",
             )
 
@@ -163,19 +186,23 @@ class TradierStatementPdf2022(ImportSchema):
         numbers = [parse_money(token) for token in data["numbers"]]
         kind, text = data["type"], data["text"]
 
-        if kind in ("BOUGHT", "SOLD"):
-            quantity, price, amount = numbers
+        if kind in ("BOUGHT", "SOLD", "REINVEST"):
+            quantity, price, amount = (
+                numbers if len(numbers) == 3 else (numbers[0], None, numbers[-1])
+            )
             instrument = _ensure_security(data, usd)
             template: Callable[..., Transaction] = (
-                eq.buy_shares if kind == "BOUGHT" else eq.sell_shares
+                eq.sell_shares if kind == "SOLD" else eq.buy_shares
             )
             return [
                 template(
                     instrument=instrument,
-                    quantity=quantity,
-                    price=price,
-                    principal=amount,
-                    description=f"{kind} {quantity} {instrument.code} (Tradier)",
+                    quantity=abs(quantity),
+                    price=price
+                    if price is not None
+                    else (abs(amount) / abs(quantity)).quantize(Decimal("0.0001")),
+                    principal=abs(amount),
+                    description=f"{kind} {quantity} {instrument.code} (Apex)",
                     **common,
                 )
             ]
@@ -237,7 +264,7 @@ class TradierStatementPdf2022(ImportSchema):
         if not numbers:
             raise NotImplementedError("no cash side")
         amount = numbers[-1]
-        if data["type"] in ("BOUGHT",) or (
+        if data["type"] in ("BOUGHT", "REINVEST") or (
             data["type"] in ("ACH", "WIRE", "JOURNAL")
             and ("DISBURSEMENT" in data["text"] or "FEE" in data["text"])
         ):
