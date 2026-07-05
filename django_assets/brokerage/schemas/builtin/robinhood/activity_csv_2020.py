@@ -12,9 +12,9 @@ parsing reverses so position-dependent dispatch sees prior state.
 
 import csv
 import datetime
-from collections.abc import Callable
 import io
 import re
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 
@@ -98,9 +98,7 @@ class RobinhoodActivityCsv2020(ImportSchema):
             buying = code == "Buy"
             if net == 0 and price:
                 net = (-1 if buying else 1) * qty * parse_money(price)
-            template: Callable[..., Transaction] = (
-                eq.buy_shares if buying else eq.sell_shares
-            )
+            template: Callable[..., Transaction] = eq.buy_shares if buying else eq.sell_shares
             return [
                 template(
                     instrument=instrument,

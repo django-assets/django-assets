@@ -16,9 +16,9 @@ signs pair into ONE conversion line so lots carries basis over
 
 import csv
 import datetime
-from collections.abc import Callable
 import io
 import re
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 
