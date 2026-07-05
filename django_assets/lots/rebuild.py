@@ -1,10 +1,12 @@
 """The lots rebuild: a pure function of the ledger (+ linkage records)
 — identical inputs, identical rows (lots spec §2.3, ADR-0032 §4).
 
-Truncate-and-rewrite per (account, instrument) scope. The deferred
-lot_conservation trigger validates final state at COMMIT; the
-end-of-rebuild assertion is the fast-fail (and the only enforcement
-when USE_DB_TRIGGERS=False).
+One account-wide chronological walk over all instruments at once, so
+within-event cash targeting (openings first), rollover links, and
+conversion carryover resolve naturally. Truncate-and-rewrite; the
+deferred lot_conservation trigger validates final state at COMMIT and
+the end-of-rebuild assertion is the fast-fail (sole enforcement when
+USE_DB_TRIGGERS=False).
 """
 
 import datetime
@@ -15,7 +17,14 @@ from django.db import models
 from django.db import transaction as db_transaction
 
 from django_assets.core.models import Account, Instrument, Transaction, TransactionLeg
-from django_assets.lots.models import Lot, LotEvent, LotMatch, StaleLotScope
+from django_assets.lots.models import (
+    ConversionLink,
+    ExerciseLink,
+    Lot,
+    LotEvent,
+    LotMatch,
+    StaleLotScope,
+)
 
 ADJUSTING_ACTIONS = ("split", "reverse_split", "stock_dividend")
 
@@ -25,100 +34,234 @@ def rebuild_lots(
     instrument: Instrument | None = None,
     from_: datetime.datetime | None = None,
 ) -> None:
-    """Deterministic rebuild; `from_` is accepted for API stability but
-    v1 always rebuilds the whole scope (correct beats clever)."""
-    instruments = (
-        [instrument]
-        if instrument is not None
-        else list(
-            Instrument.objects.filter(
-                transactionleg__account=account,
-                price_currency__isnull=False,  # cash needs no lots
-            ).distinct()
-        )
-    )
+    """Deterministic account-wide rebuild. `instrument` and `from_` are
+    accepted for API stability; v1 always rebuilds the whole account —
+    conversions and rollovers cross instruments, and correct beats
+    clever at retail scale."""
     with db_transaction.atomic():
-        for scoped in instruments:
-            Lot.objects.filter(account=account, instrument=scoped).delete()
-            _build_scope(account, scoped)
-        _assert_conservation(account, instruments)
-        StaleLotScope.objects.filter(
-            account=account, instrument__in=[inst.pk for inst in instruments]
-        ).delete()
+        _materialize_links(account)
+        Lot.objects.filter(account=account).delete()
+        _build_scope(account)
+        _assert_conservation(account)
+        StaleLotScope.objects.filter(account=account).delete()
 
 
-def _build_scope(account: Account, instrument: Instrument) -> None:
+def _materialize_links(account: Account) -> None:
+    """ExerciseLink / ConversionLink rows from the tag conventions
+    instruments' templates write (source='metadata'); manual rows
+    survive rebuilds and win conflicts [D-42/D-43]."""
+    tagged = Transaction.objects.filter(
+        legs__account=account, metadata__has_key="rollover"
+    ).distinct()
+    for transaction in tagged:
+        tag = transaction.metadata["rollover"]
+        delivered = transaction.legs.filter(
+            account=account, instrument_id=tag.get("underlying_instrument_id")
+        ).first()
+        if delivered is None:
+            continue
+        exists = ExerciseLink.objects.filter(
+            transaction=transaction, delivered_leg=delivered
+        ).exists()
+        if not exists:
+            ExerciseLink.objects.create(
+                transaction=transaction,
+                delivered_leg=delivered,
+                option_instrument_id=tag["option_instrument_id"],
+                source="metadata",
+            )
+    converted = Transaction.objects.filter(
+        legs__account=account, metadata__has_key="conversion"
+    ).distinct()
+    for transaction in converted:
+        tag = transaction.metadata["conversion"]
+        if not ConversionLink.objects.filter(transaction=transaction).exists():
+            ConversionLink.objects.create(
+                transaction=transaction,
+                from_instrument_id=tag["from_instrument_id"],
+                to_instrument_id=tag["to_instrument_id"],
+                from_quantity=Decimal(str(tag["from_quantity"])),
+                to_quantity=Decimal(str(tag["to_quantity"])),
+                source="metadata",
+            )
+
+
+class _Walk:
+    """Mutable account-walk state: FIFO lot lists per instrument."""
+
+    def __init__(self, account: Account) -> None:
+        self.account = account
+        self.open_lots: dict[int, list[Lot]] = {}
+
+    def position(self, instrument_id: int) -> Decimal:
+        total = Decimal(0)
+        for lot in self.open_lots.get(instrument_id, []):
+            total += lot.quantity_remaining * (1 if lot.direction == "long" else -1)
+        return total
+
+
+def _build_scope(account: Account) -> None:
+    """Account-wide walk (name kept for the fault-injection seam)."""
     legs = (
-        TransactionLeg.objects.filter(account=account, instrument=instrument)
-        .select_related("transaction")
+        TransactionLeg.objects.filter(account=account, instrument__price_currency__isnull=False)
+        .select_related("transaction", "instrument")
         .order_by("transaction__timestamp", "transaction_id", "id")
     )
-    open_lots: list[Lot] = []
+    exercise_links = {
+        (link.transaction_id, link.delivered_leg_id): link
+        for link in ExerciseLink.objects.filter(delivered_leg__account=account)
+    }
+    linked_option_txs = {
+        (link.transaction_id, link.option_instrument_id)
+        for link in ExerciseLink.objects.filter(delivered_leg__account=account)
+    }
+    conversion_links = {
+        link.transaction_id: link
+        for link in ConversionLink.objects.filter(transaction__legs__account=account)
+    }
 
+    walk = _Walk(account)
+    by_transaction: dict[int, list[TransactionLeg]] = {}
+    order: list[int] = []
     for leg in legs:
-        transaction = leg.transaction
+        if leg.transaction_id not in by_transaction:
+            order.append(leg.transaction_id)
+        by_transaction.setdefault(leg.transaction_id, []).append(leg)
+
+    for transaction_id in order:
+        event_legs = by_transaction[transaction_id]
+        transaction = event_legs[0].transaction
         tag = transaction.metadata.get("corporate_action")
-        if tag and tag.get("instrument_id") == instrument.pk:
-            if tag.get("type") in ADJUSTING_ACTIONS:
-                _apply_ratio_adjustment(open_lots, transaction, tag)
+        if tag and tag.get("type") in ADJUSTING_ACTIONS:
+            _apply_ratio_adjustment(
+                walk.open_lots.get(tag.get("instrument_id"), []), transaction, tag
+            )
             continue  # tagged transactions are interpreted, not walked
-        if transaction.metadata.get("conversion") or transaction.metadata.get("rollover"):
-            # Linked-carryover handling arrives with milestone L3; until
-            # then these walk as plain quantity events.
-            pass
 
-        quantity = leg.amount
-        cash = _attributable_cash(transaction, account, instrument)
-        position = sum(lot.quantity_remaining * _sign(lot) for lot in open_lots)
-        if position == 0 or (quantity > 0) == (position > 0):
-            _open_lot(open_lots, account, instrument, leg, quantity, cash)
-        else:
-            remainder, remainder_cash = _close_against(open_lots, leg, quantity, cash)
-            if remainder:
-                _open_lot(open_lots, account, instrument, leg, remainder, remainder_cash)
+        cash = _attributable_cash(transaction, account)
+        conversion = conversion_links.get(transaction_id)
+        openings: list[TransactionLeg] = []
+        closings: list[TransactionLeg] = []
+        for leg in event_legs:
+            position = walk.position(leg.instrument_id)
+            if position == 0 or (leg.amount > 0) == (position > 0):
+                openings.append(leg)
+            else:
+                closings.append(leg)
+        cash_targets = openings if openings else closings
+        share = cash / len(cash_targets) if cash_targets else Decimal(0)
 
-    for lot in open_lots:
-        lot.save()
+        carry: list[tuple[datetime.datetime, Decimal, str]] = []
+        released_option: Decimal = Decimal(0)
+        for leg in closings:
+            leg_cash = Decimal(0) if openings else share
+            zero_gain = conversion is not None or (
+                (transaction_id, leg.instrument_id) in linked_option_txs
+            )
+            released, slices = _close_against(
+                walk, leg, leg_cash, zero_gain=zero_gain, conversion=conversion
+            )
+            carry.extend(slices)
+            if (transaction_id, leg.instrument_id) in linked_option_txs:
+                released_option += released
 
+        for leg in openings:
+            link = exercise_links.get((transaction_id, leg.pk))
+            if conversion is not None and carry:
+                _open_from_carry(walk, leg, conversion, carry)
+            elif link is not None:
+                _open_lot(
+                    walk,
+                    leg,
+                    leg.amount,
+                    abs(share) - released_option,
+                    rollover_linked=True,
+                )
+            else:
+                metadata = None
+                if share == 0 and closings:
+                    # A no-cash swap without a link: close-at-recorded-
+                    # values fallback, honestly flagged.
+                    metadata = {"unlinked": True}
+                _open_lot(walk, leg, leg.amount, share, metadata=metadata)
 
-def _sign(lot: Lot) -> int:
-    return 1 if lot.direction == "long" else -1
+    for lots in walk.open_lots.values():
+        for lot in lots:
+            lot.save()
 
 
 def _open_lot(
-    open_lots: list[Lot],
-    account: Account,
-    instrument: Instrument,
+    walk: _Walk,
     leg: TransactionLeg,
     quantity: Decimal,
     cash: Decimal,
+    *,
+    rollover_linked: bool = False,
+    metadata: "dict[str, Any] | None" = None,
+    acquired_at: datetime.datetime | None = None,
+    basis: Decimal | None = None,
 ) -> None:
     lot = Lot(
-        account=account,
-        instrument=instrument,
+        account=walk.account,
+        instrument=leg.instrument,
         opened_by_leg=leg,
-        acquired_at=leg.transaction.trade_timestamp or leg.transaction.timestamp,
+        acquired_at=acquired_at or leg.transaction.trade_timestamp or leg.transaction.timestamp,
         quantity=abs(quantity),
         quantity_remaining=abs(quantity),
-        cost_basis=abs(cash),
-        cost_basis_remaining=abs(cash),
+        cost_basis=basis if basis is not None else abs(cash),
+        cost_basis_remaining=basis if basis is not None else abs(cash),
         direction="long" if quantity > 0 else "short",
+        rollover_linked=rollover_linked,
+        metadata=metadata or {},
     )
     lot.save()
-    open_lots.append(lot)
+    walk.open_lots.setdefault(leg.instrument_id, []).append(lot)
+
+
+def _open_from_carry(
+    walk: _Walk,
+    leg: TransactionLeg,
+    conversion: ConversionLink,
+    carry: "list[tuple[datetime.datetime, Decimal, str]]",
+) -> None:
+    """Conversion carryover (ADR-0032 §5): target lots inherit basis
+    unchanged in its ORIGINAL currency, ratio-mapped; acquired_at tacks;
+    no realized result, no rate anywhere."""
+    ratio = conversion.to_quantity / conversion.from_quantity
+    from_ccy = conversion.from_instrument.price_currency
+    from_currency = from_ccy.code if from_ccy is not None else ""
+    for acquired_at, basis, source_qty in carry:
+        target_quantity = Decimal(source_qty) * ratio
+        sign = 1 if leg.amount > 0 else -1
+        _open_lot(
+            walk,
+            leg,
+            sign * target_quantity,
+            Decimal(0),
+            basis=basis,
+            acquired_at=acquired_at,
+            metadata={
+                "basis_currency": from_currency,
+                "converted_from": conversion.from_instrument.code,
+            },
+        )
 
 
 def _close_against(
-    open_lots: list[Lot],
+    walk: _Walk,
     closing_leg: TransactionLeg,
-    quantity: Decimal,
     cash: Decimal,
-) -> tuple[Decimal, Decimal]:
-    """Consume FIFO lots; returns any zero-crossing remainder and its
-    cash share."""
-    to_close = abs(quantity)
+    *,
+    zero_gain: bool = False,
+    conversion: "ConversionLink | None" = None,
+) -> "tuple[Decimal, list[tuple[datetime.datetime, Decimal, str]]]":
+    """FIFO consumption. Returns (released basis, carry slices)."""
+    lots = walk.open_lots.get(closing_leg.instrument_id, [])
+    to_close = abs(closing_leg.amount)
     total = to_close
-    for lot in list(open_lots):
+    released_total = Decimal(0)
+    carry: list[tuple[datetime.datetime, Decimal, str]] = []
+    for lot in lots:
         if to_close == 0:
             break
         if lot.quantity_remaining == 0:
@@ -126,11 +269,28 @@ def _close_against(
         consumed = min(lot.quantity_remaining, to_close)
         share = consumed / lot.quantity
         basis_recovered = lot.cost_basis * share
-        proceeds = abs(cash) * consumed / total if total else Decimal(0)
-        gain = proceeds - basis_recovered if lot.direction == "long" else basis_recovered - proceeds
+        if zero_gain:
+            proceeds = basis_recovered
+            gain = Decimal(0)
+        else:
+            proceeds = abs(cash) * consumed / total if total else Decimal(0)
+            gain = (
+                proceeds - basis_recovered
+                if lot.direction == "long"
+                else basis_recovered - proceeds
+            )
         lot.quantity_remaining -= consumed
         lot.cost_basis_remaining -= basis_recovered
         lot.save()
+        metadata: dict[str, Any] = {}
+        basis_currency = lot.metadata.get("basis_currency")
+        proceeds_currency = _cash_currency_code(closing_leg.transaction)
+        if basis_currency and proceeds_currency and basis_currency != proceeds_currency:
+            metadata = {
+                "cross_currency": True,
+                "basis_currency": basis_currency,
+                "proceeds_currency": proceeds_currency,
+            }
         LotMatch.objects.create(
             lot=lot,
             closing_leg=closing_leg,
@@ -139,12 +299,31 @@ def _close_against(
             basis_recovered=basis_recovered,
             realized_gain=gain,
             term=_term(lot.acquired_at, closing_leg.transaction.timestamp),
+            metadata=metadata,
         )
+        if conversion is not None:
+            carry.append((lot.acquired_at, basis_recovered, str(consumed)))
+        released_total += basis_recovered if lot.direction == "short" else -basis_recovered
         to_close -= consumed
-    remainder_sign = 1 if quantity > 0 else -1
-    remainder = to_close * remainder_sign
-    remainder_cash = abs(cash) * to_close / total if total else Decimal(0)
-    return remainder, remainder_cash
+    # Zero-crossing remainder opens fresh in the caller's opening pass —
+    # v1 templates never produce it in one leg, so the remainder is
+    # simply re-opened with proportional cash by the caller when needed.
+    if to_close:
+        sign = 1 if closing_leg.amount > 0 else -1
+        _open_lot(
+            walk,
+            closing_leg,
+            sign * to_close,
+            cash * to_close / total if total else Decimal(0),
+        )
+    return released_total, carry
+
+
+def _cash_currency_code(transaction: Transaction) -> str:
+    for leg in transaction.legs.select_related("instrument"):
+        if leg.instrument.price_currency_id is None:
+            return leg.instrument.code
+    return ""
 
 
 def _term(acquired_at: datetime.datetime, closed_at: datetime.datetime) -> str:
@@ -161,7 +340,7 @@ def _add_year(day: datetime.date) -> datetime.date:
 
 
 def _apply_ratio_adjustment(
-    open_lots: list[Lot], transaction: Transaction, tag: dict[str, Any]
+    open_lots: "list[Lot]", transaction: Transaction, tag: dict[str, Any]
 ) -> None:
     ratio = Decimal(str(tag["ratio"]))
     for lot in open_lots:
@@ -185,21 +364,26 @@ def _apply_ratio_adjustment(
         )
 
 
-def _attributable_cash(
-    transaction: Transaction, account: Account, instrument: Instrument
-) -> Decimal:
+def _attributable_cash(transaction: Transaction, account: Account) -> Decimal:
     """The user-side net cash of the event (US convention: fees already
-    inside the net perspective-cash leg, so basis capitalizes and
-    proceeds net out with no double counting).
+    inside the net perspective-cash leg — basis capitalizes, proceeds
+    net out, nothing double-counts).
 
-    Role heuristic (the trades twin, duplicated here because lots may
-    not import trades — ADR-0015 DAG): the mirror account is the one
-    holding the opposite-sign leg of the scoped instrument; the user
-    cash slice is the largest cash-role leg not on it.
-    """
+    Role heuristic (trades' twin, duplicated because lots may not import
+    trades — ADR-0015 DAG): mirror accounts hold the opposite side of
+    this account's asset legs; the user cash slice is the largest
+    cash-role leg not on one."""
     legs = list(transaction.legs.select_related("instrument", "account"))
-    scoped = [leg for leg in legs if leg.instrument_id == instrument.pk]
-    mirror_accounts = {leg.account_id for leg in scoped if leg.account_id != account.pk}
+    scoped_instruments = {
+        leg.instrument_id
+        for leg in legs
+        if leg.account_id == account.pk and leg.instrument.price_currency_id is not None
+    }
+    mirror_accounts = {
+        leg.account_id
+        for leg in legs
+        if leg.instrument_id in scoped_instruments and leg.account_id != account.pk
+    }
     cash_legs = [
         leg
         for leg in legs
@@ -211,9 +395,9 @@ def _attributable_cash(
     return user_cash.amount
 
 
-def _assert_conservation(account: Account, instruments: "list[Instrument]") -> None:
+def _assert_conservation(account: Account) -> None:
     """Fast-fail mirror of the lot_conservation trigger."""
-    lots = Lot.objects.filter(account=account, instrument__in=[i.pk for i in instruments])
+    lots = Lot.objects.filter(account=account)
     for lot in lots.annotate(
         matched_quantity=models.Sum("matches__quantity"),
         recovered=models.Sum("matches__basis_recovered"),
