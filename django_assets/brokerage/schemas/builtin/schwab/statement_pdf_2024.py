@@ -108,6 +108,13 @@ ACTIONS = (
     "SecurityTransfer",
 )
 REMOVALS = ("ExpiredLong", "ExpiredShort", "ExerciseShort", "ExerciseLong", "Assigned", "Option")
+#: ADR-0038 §2: statement dividend actions carry the character.
+DIVIDEND_CHARACTER = {
+    "Qual.Dividend": "qualified",
+    "SpecQualDiv": "qualified",
+    "Non-QualifiedDiv": "ordinary",
+    "PrYrCashDiv": "ordinary",
+}
 
 
 def _split_action(rest: str) -> "tuple[str, str]":
@@ -400,6 +407,8 @@ class SchwabStatementPdf2024(ImportSchema):
                     amount=numbers[-1],
                     currency=usd,
                     description=label,
+                    character=DIVIDEND_CHARACTER.get(action, "unclassified"),
+                    character_label=action or "Dividend",
                     **common,
                 )
             ]

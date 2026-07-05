@@ -1009,6 +1009,37 @@ def checkpoint_audit(root: Path) -> "list[dict]":
     return results
 
 
+def trade_detection_audit() -> None:
+    """ADR-0037: run the strategy engine over every artifact user's
+    bucket and report the proposal queue — nothing confirms itself."""
+    from collections import Counter
+
+    from django.contrib.auth import get_user_model
+
+    from django_assets.trades.detection import default_bucket, detect
+    from django_assets.trades.models import TradeProposal
+
+    users = get_user_model().objects.filter(
+        username__regex=r"^(robinhood|schwab|td-ameritrade|tradier|ally|investinvol|homebroker)-"
+    )
+    kinds: Counter = Counter()
+    structures: Counter = Counter()
+    for user in users:
+        for proposal in detect(user):
+            kinds[proposal.kind] += 1
+            if proposal.structure:
+                structures[proposal.structure] += 1
+    pending = TradeProposal.objects.filter(resolution="").count()
+    bucket_lines = sum(len(default_bucket(user)) for user in users)
+    print(
+        f"trade detection: new proposals {dict(kinds) or 'none'}, "
+        f"pending total: {pending}, bucket lines: {bucket_lines}"
+    )
+    if structures:
+        top = ", ".join(f"{k}={v}" for k, v in structures.most_common(8))
+        print(f"  structures proposed: {top}")
+
+
 def reset() -> None:
     """Purge every artifact-runner user (cascades accounts, batches,
     transactions, lots — the whole graph) for a clean acceptance run."""
@@ -1081,6 +1112,7 @@ def main() -> int:
     detect_results = detect_audit(root)
     all_results.extend(detect_results)
     all_results.extend(checkpoint_audit(root))
+    trade_detection_audit()
     detect_ok = sum(1 for r in detect_results if r["status"] == "OK")
     print(f"format detection: {detect_ok}/{len(detect_results)} files recognized correctly")
 

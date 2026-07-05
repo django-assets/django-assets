@@ -804,3 +804,59 @@ def guard_same_user_tags(
     foreign = Tag.objects.filter(pk__in=tag_ids).exclude(category__user=instance.user_id)
     if foreign.exists():
         raise ValueError("tags attach only to trades of the same user (ADR-0030)")
+
+
+class TradeProposal(models.Model):
+    """ADR-0037: one detected trade action awaiting the user's call.
+
+    The engine walks the default bucket (legs with no TradeAllocation —
+    derived, never stored) chronologically and proposes; a `close` may
+    only target a CONFIRMED Trade, never another proposal (the
+    cascade). There is no unmatched-close concept: a reducing fill
+    whose open isn't confirmed simply stays in the bucket. Resolution
+    is confirm / reject / MODIFY — modification is first-class and the
+    user's deltas are recorded in evidence.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="trade_proposals"
+    )
+    kind = models.CharField(max_length=10)
+    """open | close | adjust | event"""
+    proposed_at_date = models.DateField(db_index=True)
+    legs = models.JSONField(default=list, blank=True)
+    """[{"leg_id": int, "amount": str}] — full leg amounts unless a
+    partial close; empty for event proposals (the transaction rides
+    event_transaction)."""
+    event_transaction = models.ForeignKey(
+        Transaction, null=True, blank=True, on_delete=models.CASCADE, related_name="+"
+    )
+    target_trade = models.ForeignKey(
+        Trade, null=True, blank=True, on_delete=models.CASCADE, related_name="proposals"
+    )
+    proposed_name = models.CharField(max_length=200, blank=True)
+    structure = models.CharField(max_length=30, blank=True)
+    horizon = models.CharField(max_length=20, blank=True)
+    evidence = models.JSONField(default=dict, blank=True)
+    fingerprint = models.CharField(max_length=64, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution = models.CharField(max_length=20, blank=True)
+    """"" (pending) | confirmed | rejected"""
+    note = models.TextField(blank=True)
+    booked_trade = models.ForeignKey(
+        Trade, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    objects: ClassVar[models.Manager["TradeProposal"]] = models.Manager()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "fingerprint"], name="uniq_tradeproposal_user_fingerprint"
+            ),
+        ]
+        ordering = ["proposed_at_date", "pk"]
+
+    def __str__(self) -> str:
+        return f"{self.kind} {self.structure or ''} @ {self.proposed_at_date} ({self.resolution or 'pending'})"

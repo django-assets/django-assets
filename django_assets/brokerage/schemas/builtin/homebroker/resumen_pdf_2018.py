@@ -596,9 +596,18 @@ class HomeBrokerResumenPdf2018(ImportSchema):
                 )
             ]
         if comp == RENT and amount > 0:
+            # ADR-0038 §5 / R-12: renta y amortización blends coupon with
+            # principal return; without amortization schedules the split
+            # is unknowable — visibly unclassified, never confidently
+            # "interest".
             return [
                 plumbing.interest_earned(
-                    currency=currency, amount=amount, description=label, **common
+                    currency=currency,
+                    amount=amount,
+                    description=label,
+                    character="unclassified",
+                    character_label="RTA renta y amortización",
+                    **common,
                 )
             ]
         # Cauciones, custody transfers, MEP legs, débito/crédito notes and

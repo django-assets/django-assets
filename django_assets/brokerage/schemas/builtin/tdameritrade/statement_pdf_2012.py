@@ -409,12 +409,15 @@ class TdAmeritradeStatementPdf2012(ImportSchema):
                     plumbing.interest_earned if amount >= 0 else plumbing.interest_charged
                 )
                 return [template(currency=usd, amount=abs(amount), description=label, **common)]
+            character, class_label = _dividend_class(data.get("detail", []))
             return [
                 eq.dividend_received(
                     instrument=_ensure_security(data, usd),
                     amount=amount,
                     currency=usd,
                     description=label,
+                    character=character,
+                    character_label=class_label,
                     **common,
                 )
             ]
@@ -486,6 +489,22 @@ class TdAmeritradeStatementPdf2012(ImportSchema):
             instrument=ensure_currency("USD"),
             amount=amount,
         )
+
+
+def _dividend_class(detail: "list[str]") -> "tuple[str, str]":
+    """ADR-0038 §2: TDA prints the dividend class as a continuation line
+    under the row ("Ordinary Dividends 288.23")."""
+    for line in detail:
+        lowered = line.lower()
+        if "qualified dividend" in lowered and not lowered.startswith("non"):
+            return "qualified", line.split("  ")[0][:40]
+        if (
+            "ordinary dividend" in lowered
+            or "nonqualified" in lowered
+            or "non-qualified" in lowered
+        ):
+            return "ordinary", line.split("  ")[0][:40]
+    return "unclassified", ""
 
 
 def _line_kind(payload: dict[str, Any]) -> str:
