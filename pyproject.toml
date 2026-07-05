@@ -53,6 +53,14 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["django_assets"]
 
+[tool.commitizen]
+# Conventional-Commits changelog (PADR-0009); release notes come from
+# `cz changelog` at tag time.
+name = "cz_conventional_commits"
+tag_format = "v$version"
+version_provider = "pep621"
+update_changelog_on_bump = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
