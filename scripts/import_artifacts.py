@@ -166,6 +166,105 @@ def verify_downstream(folder_name: str, accounts: dict) -> dict:
     }
 
 
+def tradier_statement_files(root):
+    """Every Tradier monthly statement, chronologically. 1099 tax forms
+    are excluded by design (tax documents, not transactions)."""
+    base = root / "Tradier"
+    if not base.exists():
+        return []
+    stamped = []
+    for path in base.rglob("*.pdf"):
+        if "1099" in path.name.upper():
+            continue
+        stamp = _statement_month(path)
+        if stamp:
+            stamped.append((stamp, path))
+    stamped.sort()
+    return [path for _stamp, path in stamped]
+
+
+def _statement_month(path):
+    name = path.stem
+    # "Doc_-991_STATEMENT_6YA22794_2024_02_29_…" — full date, most specific.
+    match = re.search(r"_(\d{4})_(\d{2})_\d{2}_", name)
+    if match:
+        return f"{match.group(1)}-{match.group(2)}"
+    # "2022-02" / "2022-04,05,06" — leading year-month.
+    match = re.match(r"^(\d{4})-(\d{2})", name)
+    if match:
+        return f"{match.group(1)}-{match.group(2)}"
+    # "STATEMENT-3_28_2024".
+    match = re.search(r"STATEMENT[-_](\d{1,2})_\d{1,2}_(\d{4})", name)
+    if match:
+        return f"{match.group(2)}-{int(match.group(1)):02d}"
+    return ""
+
+
+def import_tradier(root):
+    from django.contrib.auth import get_user_model
+
+    from django_assets.brokerage.accounts import ensure_standard_accounts
+    from django_assets.brokerage.imports import process_batch
+    from django_assets.brokerage.models import AccountProfile, ImportBatch
+    from django_assets.brokerage.schemas.instruments import ensure_currency
+    from django_assets.core.queries import Holding
+
+    files = tradier_statement_files(root)
+    if not files:
+        return [], None
+    user, _ = get_user_model().objects.get_or_create(username="tradier-6ya22794")
+    accounts = ensure_standard_accounts(user)
+    for key in ("cash", "holdings"):
+        AccountProfile.objects.get_or_create(
+            account=accounts[key], defaults={"allows_reconciliation": True}
+        )
+    usd = ensure_currency("USD")
+
+    results = []
+    for path in files:
+        batch = ImportBatch.objects.create(
+            account=accounts["cash"],
+            schema_broker="tradier",
+            schema_document_kind="statement",
+            schema_format_kind="pdf",
+            schema_version="2022.1",
+            file_name=path.name,
+        )
+        before = Holding.current(accounts["cash"], usd)
+        process_batch(batch, path.read_bytes())
+        after = Holding.current(accounts["cash"], usd)
+        opening = closing = None
+        line = batch.lines.first()
+        if line is not None:
+            balances = line.raw_data.get("balances", {})
+            opening = Decimal(balances["opening"]) if balances.get("opening") else None
+            closing = Decimal(balances["closing"]) if balances.get("closing") else None
+        stalled = batch.lines.filter(kind__startswith="broker_", matched_legs__isnull=True).count()
+        # The file-level truth: this statement's activity must move cash
+        # by exactly closing − opening. Continuity breaks (a missing
+        # month in the corpus) are surfaced as GAP, never papered over.
+        if closing is not None and opening is not None:
+            ok = stalled == 0 and (after - before) == (closing - opening)
+        else:
+            ok = stalled == 0
+        gap = opening is not None and before != opening
+        status = "FAIL" if not ok else ("GAP (missing prior stmt)" if gap else "OK")
+        results.append(
+            {
+                "file": f"Tradier/{_statement_month(path)} {path.name[:34]}",
+                "status": status,
+                "lines": batch.lines.count(),
+                "transactions": batch.transaction_count,
+                "cash_delta": str(after - before),
+                "expected": str(closing - opening)
+                if closing is not None and opening is not None
+                else "(no stmt balances)",
+                "stalled_lines": stalled,
+            }
+        )
+    return results, accounts
+
+
 def reset() -> None:
     """Purge every artifact-runner user (cascades accounts, batches,
     transactions, lots — the whole graph) for a clean acceptance run."""
@@ -196,6 +295,10 @@ def main() -> int:
 
     all_results = []
     downstream = []
+    tradier_results, tradier_accounts = import_tradier(root)
+    all_results.extend(tradier_results)
+    if tradier_accounts:
+        downstream.append(verify_downstream("Tradier/6YA22794", tradier_accounts))
     for broker, config in BROKERS.items():
         base = root / broker / broker
         if not base.exists():
