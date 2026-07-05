@@ -62,7 +62,7 @@ def test_reject_advance_chain(batch, accounts, usd, aapl, manual_buy):
         description="another candidate",
     ) as b:
         b.add_leg(account=accounts["cash"], instrument=usd, amount="-1750.00")
-        b.add_leg(account=accounts["external"], instrument=usd, amount="1750.00")
+        b.add_leg(account=accounts["market"], instrument=usd, amount="1750.00")
     process_batch(batch, SCHWAB_CSV)
     line = buy_line(batch)
 
@@ -112,7 +112,7 @@ def test_score_threshold_discards_wild_candidates(batch, accounts, usd, aapl):
         description="unrelated",
     ) as b:
         b.add_leg(account=accounts["cash"], instrument=usd, amount="-9.99")
-        b.add_leg(account=accounts["external"], instrument=usd, amount="9.99")
+        b.add_leg(account=accounts["market"], instrument=usd, amount="9.99")
     process_batch(batch, SCHWAB_CSV)
     line = buy_line(batch)
     assert current_proposal(line) is None

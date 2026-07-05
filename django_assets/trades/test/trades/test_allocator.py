@@ -24,10 +24,10 @@ def buy_tx(accounts, usd, aapl, user):
     commissions = Account.objects.create(owner=user, name="commissions")
     with TransactionBuilder(account=accounts["cash"], timestamp=TS) as b:
         b.add_leg(account=accounts["holdings"], instrument=aapl, amount="1000")
-        b.add_leg(account=accounts["external"], instrument=aapl, amount="-1000")
+        b.add_leg(account=accounts["market"], instrument=aapl, amount="-1000")
         b.add_leg(account=accounts["cash"], instrument=usd, amount="-175502.00")
         b.add_leg(account=commissions, instrument=usd, amount="2.00")
-        b.add_leg(account=accounts["external"], instrument=usd, amount="175500.00")
+        b.add_leg(account=accounts["market"], instrument=usd, amount="175500.00")
     return b.transaction
 
 
@@ -42,7 +42,7 @@ def test_assign_quantity_pro_rates_cash(user, buy_tx, aapl, usd, accounts):
     assert by_category[("", "holdings")] == D("500")
     assert by_category[("cost", "cash")] == D("-87751.00")
     assert by_category[("fee", "commissions")] == D("1.00")
-    assert not any(a.leg.account.name == "external" for a in allocations)
+    assert not any(a.leg.account.name == "market" for a in allocations)
     assert trade.net_position(aapl) == D("500")
 
 

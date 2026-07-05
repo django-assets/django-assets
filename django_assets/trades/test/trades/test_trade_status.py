@@ -19,9 +19,9 @@ D = Decimal
 def make_trade_event(accounts, usd, aapl, quantity, cash, timestamp):
     with TransactionBuilder(account=accounts["cash"], timestamp=timestamp) as b:
         b.add_leg(account=accounts["holdings"], instrument=aapl, amount=quantity)
-        b.add_leg(account=accounts["external"], instrument=aapl, amount=-D(quantity))
+        b.add_leg(account=accounts["market"], instrument=aapl, amount=-D(quantity))
         b.add_leg(account=accounts["cash"], instrument=usd, amount=cash)
-        b.add_leg(account=accounts["external"], instrument=usd, amount=-D(cash))
+        b.add_leg(account=accounts["market"], instrument=usd, amount=-D(cash))
     return b.transaction
 
 
@@ -81,9 +81,9 @@ def test_multi_account_trade(user, accounts, usd, aapl):
         account=accounts["cash"], timestamp=TS + datetime.timedelta(days=3)
     ) as b:
         b.add_leg(account=ira, instrument=aapl, amount="-10")
-        b.add_leg(account=accounts["external"], instrument=aapl, amount="10")
+        b.add_leg(account=accounts["market"], instrument=aapl, amount="10")
         b.add_leg(account=accounts["cash"], instrument=usd, amount="1100.00")
-        b.add_leg(account=accounts["external"], instrument=usd, amount="-1100.00")
+        b.add_leg(account=accounts["market"], instrument=usd, amount="-1100.00")
     close_tx = b.transaction
 
     trade = Trade.objects.create(user=user, name="moved")

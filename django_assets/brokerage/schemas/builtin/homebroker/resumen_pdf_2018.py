@@ -462,7 +462,15 @@ class HomeBrokerResumenPdf2018(ImportSchema):
                 move: Callable[..., Transaction] = (
                     plumbing.deposit_currency if amount > 0 else plumbing.withdraw_currency
                 )
-                return [move(currency=ext, amount=abs(amount), description=label, **common)]
+                return [
+                    move(
+                        currency=ext,
+                        amount=abs(amount),
+                        description=label,
+                        via="conversions",  # subaccount leg of an FX journal
+                        **common,
+                    )
+                ]
             # Share/bond dividends and CANJE swaps: quantity, no cash.
             instrument = _ensure_especie(data["especie_group"] or data["symbol"], ars)
             return [
@@ -504,9 +512,10 @@ class HomeBrokerResumenPdf2018(ImportSchema):
             ]
 
         if comp in RECEIPTS:
+            via = "conversions" if comp == "NCCD" else "funding"
             return [
                 plumbing.deposit_currency(
-                    currency=currency, amount=abs(amount), description=label, **common
+                    currency=currency, amount=abs(amount), description=label, via=via, **common
                 )
             ]
         if comp in PAYMENTS:

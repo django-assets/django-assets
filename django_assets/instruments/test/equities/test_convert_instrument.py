@@ -39,9 +39,9 @@ def test_convert_instrument_four_leg_shape(accounts, usd, aapl, cedear):
     )
     assert legs_by(tx) == {
         ("holdings", "AAPL.BA"): D("-200"),
-        ("external", "AAPL.BA"): D("200"),
+        ("issuers", "AAPL.BA"): D("200"),
         ("holdings", "AAPL"): D("20"),
-        ("external", "AAPL"): D("-20"),
+        ("issuers", "AAPL"): D("-20"),
     }
     assert tx.metadata["conversion"] == {
         "from_instrument_id": cedear.pk,

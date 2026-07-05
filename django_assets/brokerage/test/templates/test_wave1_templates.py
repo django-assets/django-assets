@@ -24,7 +24,7 @@ def test_deposit_currency(accounts, usd):
     tx = templates.deposit_currency(accounts=accounts, currency=usd, amount="5000.00", timestamp=TS)
     assert legs_by(tx) == {
         ("brokerage_cash", "USD"): D("5000.00"),
-        ("external_counterparty", "USD"): D("-5000.00"),
+        ("owner_funding", "USD"): D("-5000.00"),
     }
     assert tx.origin == "manual"
 
@@ -35,7 +35,7 @@ def test_withdraw_currency(accounts, usd):
     )
     assert legs_by(tx) == {
         ("brokerage_cash", "USD"): D("-1200.00"),
-        ("external_counterparty", "USD"): D("1200.00"),
+        ("owner_funding", "USD"): D("1200.00"),
     }
 
 

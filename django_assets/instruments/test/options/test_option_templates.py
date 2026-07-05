@@ -58,11 +58,11 @@ def test_sell_option_hims_golden(accounts, usd, hims_call):
     )
     assert legs_by(tx) == {
         ("holdings", "HIMS 261218C00030000"): D("-2"),
-        ("external", "HIMS 261218C00030000"): D("2"),
+        ("market", "HIMS 261218C00030000"): D("2"),
         ("cash", "USD"): D("1569.04"),
         ("commissions", "USD"): D("0.90"),
         ("regulatory_fees", "USD"): D("0.06"),
-        ("external", "USD"): D("-1570.00"),
+        ("market", "USD"): D("-1570.00"),
     }
 
 
@@ -77,9 +77,9 @@ def test_buy_option_golden(accounts, usd, hims_call):
     )
     assert legs_by(tx) == {
         ("holdings", "HIMS 261218C00030000"): D("2"),
-        ("external", "HIMS 261218C00030000"): D("-2"),
+        ("market", "HIMS 261218C00030000"): D("-2"),
         ("cash", "USD"): D("-1000.00"),
-        ("external", "USD"): D("1000.00"),
+        ("market", "USD"): D("1000.00"),
     }
 
 
@@ -95,14 +95,14 @@ def test_exercise_uses_adjusted_basket_on_cutover(accounts, usd, pfe, vtrs, pfe1
     )
     assert legs_by(tx) == {
         ("holdings", "PFE1 201218C00035000"): D("-1"),
-        ("external", "PFE1 201218C00035000"): D("1"),
+        ("market", "PFE1 201218C00035000"): D("1"),
         ("holdings", "PFE"): D("100"),
-        ("external", "PFE"): D("-100"),
+        ("market", "PFE"): D("-100"),
         ("holdings", "VTRS"): D("12"),
-        ("external", "VTRS"): D("-12"),
+        ("market", "VTRS"): D("-12"),
         # $6.47 deliverable cash in, $3,500 strike out: net −3,493.53.
         ("cash", "USD"): D("-3493.53"),
-        ("external", "USD"): D("3493.53"),
+        ("market", "USD"): D("3493.53"),
     }
     tag = tx.metadata["rollover"]
     assert tag["kind"] == "exercise"
@@ -186,11 +186,11 @@ def test_assign_option_put_golden(accounts, usd):
     )
     assert legs_by(tx) == {
         ("holdings", "XYZ 260618P00010000"): D("1"),  # short position closes
-        ("external", "XYZ 260618P00010000"): D("-1"),
+        ("market", "XYZ 260618P00010000"): D("-1"),
         ("holdings", "XYZ"): D("100"),  # put assigned: shares come IN
-        ("external", "XYZ"): D("-100"),
+        ("market", "XYZ"): D("-100"),
         ("cash", "USD"): D("-1000.00"),  # pay the strike
-        ("external", "USD"): D("1000.00"),
+        ("market", "USD"): D("1000.00"),
     }
     tag = tx.metadata["rollover"]
     assert tag["kind"] == "assignment"
@@ -219,7 +219,7 @@ def test_expire_option(accounts, usd, pfe1_call):
     )
     assert legs_by(long_close) == {
         ("holdings", "PFE1 201218C00035000"): D("-2"),
-        ("external", "PFE1 201218C00035000"): D("2"),
+        ("market", "PFE1 201218C00035000"): D("2"),
     }
     short_close = templates.expire_option(
         accounts=accounts, instrument=pfe1_call, contracts="-2", timestamp=ts(2020, 12, 19)

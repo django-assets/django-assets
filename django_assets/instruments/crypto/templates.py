@@ -29,6 +29,7 @@ def _in_kind(
     timestamp: datetime.datetime,
     trade_timestamp: datetime.datetime | None,
     origin: str,
+    via: str,
 ) -> Transaction:
     with TransactionBuilder(
         account=routed(accounts, "holdings"),
@@ -38,7 +39,7 @@ def _in_kind(
         origin=origin,
     ) as b:
         b.add_leg(account=routed(accounts, "holdings"), instrument=instrument, amount=quantity)
-        b.add_leg(account=routed(accounts, "external"), instrument=instrument, amount=-quantity)
+        b.add_leg(account=routed(accounts, via), instrument=instrument, amount=-quantity)
     assert b.transaction is not None
     return b.transaction
 
@@ -61,6 +62,7 @@ def deposit_crypto(
         timestamp=timestamp,
         trade_timestamp=trade_timestamp,
         origin=origin,
+        via="funding",
     )
 
 
@@ -88,7 +90,7 @@ def withdraw_crypto(
         b.add_leg(account=routed(accounts, "holdings"), instrument=instrument, amount=-(qty + fee))
         if fee:
             b.add_leg(account=routed(accounts, "network_fees"), instrument=instrument, amount=fee)
-        b.add_leg(account=routed(accounts, "external"), instrument=instrument, amount=qty)
+        b.add_leg(account=routed(accounts, "funding"), instrument=instrument, amount=qty)
     assert b.transaction is not None
     return b.transaction
 
@@ -120,6 +122,7 @@ def staking_reward(
         timestamp=timestamp,
         trade_timestamp=trade_timestamp,
         origin=origin,
+        via="issuers",
     )
 
 
@@ -140,6 +143,7 @@ def airdrop(
         timestamp=timestamp,
         trade_timestamp=trade_timestamp,
         origin=origin,
+        via="issuers",
     )
 
 
@@ -163,4 +167,5 @@ def hard_fork(
         timestamp=timestamp,
         trade_timestamp=trade_timestamp,
         origin=origin,
+        via="issuers",
     )

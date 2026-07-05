@@ -18,7 +18,10 @@ from django_assets.core.models import Account
 DEFAULT_ACCOUNT_NAMES = {
     "cash": "brokerage_cash",
     "holdings": "brokerage_holdings",
-    "external": "external_counterparty",
+    "market": "market_counterparty",
+    "funding": "owner_funding",
+    "issuers": "issuer_counterparty",
+    "conversions": "currency_conversions",
     "commissions": "commissions_paid",
     "regulatory_fees": "regulatory_fees_paid",
     "adr_fees": "adr_fees_paid",

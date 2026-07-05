@@ -79,7 +79,10 @@ def test_ensure_standard_accounts_idempotent(user):
     assert set(first) >= {
         "cash",
         "holdings",
-        "external",
+        "market",
+        "funding",
+        "issuers",
+        "conversions",
         "commissions",
         "regulatory_fees",
         "tax_withheld",

@@ -145,9 +145,9 @@ def test_divergence_from_naive_fifo(user, accounts, usd, aapl):
     def buy(qty, cash, ts):
         with TransactionBuilder(account=accounts["cash"], timestamp=ts) as b:
             b.add_leg(account=accounts["holdings"], instrument=aapl, amount=qty)
-            b.add_leg(account=accounts["external"], instrument=aapl, amount=-D(qty))
+            b.add_leg(account=accounts["market"], instrument=aapl, amount=-D(qty))
             b.add_leg(account=accounts["cash"], instrument=usd, amount=cash)
-            b.add_leg(account=accounts["external"], instrument=usd, amount=-D(cash))
+            b.add_leg(account=accounts["market"], instrument=usd, amount=-D(cash))
         return b.transaction
 
     tx1 = buy("100", "-1000.00", TS)

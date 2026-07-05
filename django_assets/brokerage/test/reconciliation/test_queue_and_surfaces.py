@@ -41,7 +41,7 @@ def test_match_and_unmatch_helpers(processed, unmatched, accounts):
 def test_match_refuses_ineligible_legs(processed, unmatched, accounts):
     """D-10: legs on non-reconciling accounts never enter matched_legs."""
     line, _legs = unmatched
-    external_leg = TransactionLeg.objects.filter(account=accounts["external"]).first()
+    external_leg = TransactionLeg.objects.filter(account=accounts["market"]).first()
     with pytest.raises(ValueError, match="allows_reconciliation"):
         match_line(line, [external_leg])
 

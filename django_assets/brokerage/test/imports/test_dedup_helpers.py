@@ -59,7 +59,7 @@ def test_external_id_filtering(batch, accounts, usd):
             "account": accounts["cash"],
             "legs": [
                 {"account": accounts["cash"], "instrument": usd, "amount": "10.00"},
-                {"account": accounts["external"], "instrument": usd, "amount": "-10.00"},
+                {"account": accounts["market"], "instrument": usd, "amount": "-10.00"},
             ],
             "_import_external_id": f"exec-{i}",
         }
@@ -85,7 +85,7 @@ def test_import_transactions_links_and_uniqueness(batch, accounts, usd):
             "account": accounts["cash"],
             "legs": [
                 {"account": accounts["cash"], "instrument": usd, "amount": "5.00"},
-                {"account": accounts["external"], "instrument": usd, "amount": "-5.00"},
+                {"account": accounts["market"], "instrument": usd, "amount": "-5.00"},
             ],
             "_import_external_id": "exec-1",
             "_import_source_data": {"row": 1},
@@ -95,7 +95,7 @@ def test_import_transactions_links_and_uniqueness(batch, accounts, usd):
             "account": accounts["cash"],
             "legs": [
                 {"account": accounts["cash"], "instrument": usd, "amount": "6.00"},
-                {"account": accounts["external"], "instrument": usd, "amount": "-6.00"},
+                {"account": accounts["market"], "instrument": usd, "amount": "-6.00"},
             ],
             # no external id: blank allowed, still linked to the batch
         },

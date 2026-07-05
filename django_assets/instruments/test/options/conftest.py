@@ -106,7 +106,16 @@ def pfe1_call(usd, pfe, vtrs):
 
 @pytest.fixture
 def accounts(user):
-    names = ["cash", "holdings", "external", "commissions", "regulatory_fees"]
+    names = [
+        "cash",
+        "holdings",
+        "market",
+        "funding",
+        "issuers",
+        "conversions",
+        "commissions",
+        "regulatory_fees",
+    ]
     return {n: Account.objects.create(owner=user, name=n) for n in names}
 
 

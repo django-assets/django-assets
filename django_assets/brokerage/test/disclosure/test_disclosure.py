@@ -51,7 +51,7 @@ def imported_dividend(accounts, usd, aapl):
 
 def adr_advice_edits(tx, account_map):
     """$115 gross, $14 ADR fee, $1 tax — net $100 unchanged."""
-    external_leg = tx.legs.get(account=account_map["external"])
+    external_leg = tx.legs.get(account=account_map["issuers"])
     usd_instrument = external_leg.instrument
     return DisclosureEdits(
         revised=[LegEdit(leg=external_leg, amount="-115.00")],
@@ -122,7 +122,7 @@ def test_unbalanced_edits_rejected_at_commit(imported_dividend, accounts):
     from django.db import transaction as db_tx
 
     tx = imported_dividend
-    external_leg = tx.legs.get(account=accounts["external"])
+    external_leg = tx.legs.get(account=accounts["issuers"])
     with pytest.raises(IntegrityError), db_tx.atomic():
         apply_disclosure(
             tx,
@@ -136,7 +136,7 @@ def test_helper_works_on_manual_transactions(accounts, usd, aapl):
     tx = templates.dividend_received(
         accounts=accounts, instrument=aapl, amount="50.00", timestamp=TS
     )
-    external_leg = tx.legs.get(account=accounts["external"])
+    external_leg = tx.legs.get(account=accounts["issuers"])
     event = apply_disclosure(
         tx,
         source="manual_correction",
@@ -165,7 +165,7 @@ def test_removed_leg_ids(imported_dividend, accounts):
     )
     fee_leg = tx.legs.get(account=accounts["adr_fees"])
     tax_leg = tx.legs.get(account=accounts["tax_withheld"])
-    external_leg = tx.legs.get(account=accounts["external"])
+    external_leg = tx.legs.get(account=accounts["issuers"])
     # Removals pair with a revision so the trigger stays satisfied.
     apply_disclosure(
         tx,

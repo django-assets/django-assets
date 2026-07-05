@@ -53,11 +53,15 @@ def deposit_currency(
     trade_timestamp: datetime.datetime | None = None,
     description: str = "",
     origin: str = "manual",
+    via: str = "funding",
 ) -> Transaction:
+    """`via` names the world-side routing key (ADR-0035): "funding" for
+    the owner's own money, "conversions" for the receiving side of a
+    currency exchange."""
     value = to_decimal(amount, param="amount")
     return _two_leg(
         debit=routed(accounts, "cash"),
-        credit=routed(accounts, "external"),
+        credit=routed(accounts, via),
         instrument=currency,
         amount=value,
         perspective=routed(accounts, "cash"),
@@ -77,10 +81,14 @@ def withdraw_currency(
     trade_timestamp: datetime.datetime | None = None,
     description: str = "",
     origin: str = "manual",
+    via: str = "funding",
 ) -> Transaction:
+    """`via` names the world-side routing key (ADR-0035): "funding" for
+    the owner's own money, "conversions" for the paying side of a
+    currency exchange."""
     value = to_decimal(amount, param="amount")
     return _two_leg(
-        debit=routed(accounts, "external"),
+        debit=routed(accounts, via),
         credit=routed(accounts, "cash"),
         instrument=currency,
         amount=value,
@@ -384,6 +392,6 @@ def quantity_adjustment(
         metadata=metadata,
     ) as b:
         b.add_leg(account=routed(accounts, "holdings"), instrument=instrument, amount=value)
-        b.add_leg(account=routed(accounts, "external"), instrument=instrument, amount=-value)
+        b.add_leg(account=routed(accounts, "funding"), instrument=instrument, amount=-value)
     assert b.transaction is not None
     return b.transaction
