@@ -176,3 +176,67 @@ the realized-FX decomposition of §3.2 reads it directly.
 | Explicit realized **FX** gains at conversion | blended into cross-currency lot gains | **gap** (§3.2) |
 | Single-transaction conversions via trading account | two balanced transactions when the source splits them | nuance (§3.1) |
 | Purpose-specific trading accounts | four purpose accounts; `currency_conversions` is the FX register | conforms (§3.3) |
+
+---
+
+## 5. Recognition and tax character are policy, not ledger semantics
+
+Selinger's answer to "currency is special in reporting" decouples the
+ledger from tax treatment with three levers: booking realized FX gains
+is discretionary in timing — including never ("it might be more
+convenient to calculate and record realized gains or losses less
+frequently"), so a jurisdiction that doesn't tax currency gains simply
+doesn't book them and the trading account carries the residue
+indefinitely; the computation method is whatever the law prescribes
+("you have to use whichever method is prescribed by the laws in your
+country!"), the ledger's only duty being to preserve original-currency
+amounts; and tax character is expressed as *account routing* ("you
+should have more than one income account for realized gains… one for
+realized gains taxable at the lower rate, and the other… at the higher
+rate").
+
+This ledger takes the same stance. Income character (qualified vs
+ordinary dividends, return of capital, exempt interest) is recorded as
+structured metadata from what the source documents print — with a
+strict three-source hierarchy: broker-printed, user-asserted (which
+takes precedence and survives re-import), and `unclassified` when
+neither exists. Unclassified is information, never upgraded to a
+guess. Return of capital is the one character that feeds back into the
+engine itself: it is a lot-basis event, not income, and is consumed by
+the lot rebuild under the same conservation law as everything else.
+
+## 6. Lots and trades: dual attributions of one ledger
+
+Tax lots and trades are two *total attributions* over the same
+transaction legs, and for any fully closed history their lifetime P&L
+totals must agree — attribution moves profit between buckets and
+between periods, never in aggregate. The same theorem underlies
+Selinger's point that FIFO/LIFO/ACB are alternative computations of
+one quantity.
+
+They are not redundant, because they diverge on exactly three
+dimensions, each deliberate:
+
+1. **Time-slicing.** Per-period recognition differs (FIFO matches the
+   oldest basis; a trade matches *its own* basis) — and the period
+   number computed by the mandated method is what tax authorities
+   want. Lots answer "what do I owe and when" under someone else's
+   rules.
+2. **Scope.** A trade's P&L includes the income and fees the user
+   allocated into it (a covered call's premium and dividends); lots
+   are capital-only, because a dividend is not a disposal.
+3. **Matching axis.** Lots match quantities per instrument under a
+   mandated algorithm; trades group legs per the user's stated intent.
+   One sale can close lot #3 (FIFO says so) while belonging to the
+   trade "PM wheel, round 4" (the user says so) — both simultaneously
+   true, neither derivable from the other.
+
+Because every leg belongs to exactly one trade (a specific one, or the
+per-account default bucket), the trades dimension is a complete
+partition, which makes the duality a checkable invariant rather than a
+philosophy:
+
+    Σ trade P&L (including the bucket)
+      = Σ lot realized gains + Σ allocated income − Σ allocated fees
+
+every term independently queryable, reconcilable by machine.
