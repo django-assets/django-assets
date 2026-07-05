@@ -3,5 +3,6 @@
 from django_assets.brokerage.schemas.builtin import (  # noqa: F401
     robinhood,
     schwab,
+    tdameritrade,
     tradier,
 )

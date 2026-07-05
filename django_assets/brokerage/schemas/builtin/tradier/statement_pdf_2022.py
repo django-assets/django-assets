@@ -139,9 +139,13 @@ class TradierStatementPdf2022(ImportSchema):
                 cusip = CUSIP_LINE.match(line)
                 if cusip:
                     record["cusip"] = cusip["cusip"]
-                elif line and not line.startswith(("PAGE ", "ACCOUNT NUMBER")):
-                    if len(line) > 2 and not re.fullmatch(r"[A-Z]", line):
-                        record["detail"].append(line[:80])
+                elif (
+                    line
+                    and not line.startswith(("PAGE ", "ACCOUNT NUMBER"))
+                    and len(line) > 2
+                    and not re.fullmatch(r"[A-Z]", line)
+                ):
+                    record["detail"].append(line[:80])
         done = finish()
         if done:
             yield done
