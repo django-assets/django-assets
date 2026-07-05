@@ -32,7 +32,7 @@ def aapl(usd):
 
 @pytest.fixture
 def accounts(user):
-    names = ["cash", "holdings", "external"]
+    names = ["cash", "holdings", "market", "funding", "issuers", "conversions"]
     return {n: Account.objects.create(owner=user, name=n) for n in names}
 
 
@@ -43,9 +43,9 @@ def sale_tx(accounts, usd, aapl):
         account=accounts["cash"], timestamp=TS, description="sell 1000 AAPL"
     ) as b:
         b.add_leg(account=accounts["holdings"], instrument=aapl, amount="-1000")
-        b.add_leg(account=accounts["external"], instrument=aapl, amount="1000")
+        b.add_leg(account=accounts["market"], instrument=aapl, amount="1000")
         b.add_leg(account=accounts["cash"], instrument=usd, amount="200000.00")
-        b.add_leg(account=accounts["external"], instrument=usd, amount="-200000.00")
+        b.add_leg(account=accounts["market"], instrument=usd, amount="-200000.00")
     return b.transaction
 
 

@@ -20,7 +20,10 @@ AccountMap = dict[str, Account]
 ROUTING_KEYS = (
     "cash",
     "holdings",
-    "external",
+    "market",
+    "funding",
+    "issuers",
+    "conversions",
     "commissions",
     "regulatory_fees",
     "tax_withheld",
@@ -124,7 +127,7 @@ def share_trade(
         metadata=metadata,
     ) as b:
         b.add_leg(account=routed(accounts, "holdings"), instrument=instrument, amount=side * qty)
-        b.add_leg(account=routed(accounts, "external"), instrument=instrument, amount=-side * qty)
+        b.add_leg(account=routed(accounts, "market"), instrument=instrument, amount=-side * qty)
         b.add_leg(account=routed(accounts, "cash"), instrument=ccy, amount=net_cash)
         if fee_commission:
             b.add_leg(
@@ -136,6 +139,6 @@ def share_trade(
                 instrument=ccy,
                 amount=fee_regulatory,
             )
-        b.add_leg(account=routed(accounts, "external"), instrument=ccy, amount=side * gross)
+        b.add_leg(account=routed(accounts, "market"), instrument=ccy, amount=side * gross)
     assert b.transaction is not None
     return b.transaction

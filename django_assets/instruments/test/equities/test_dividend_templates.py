@@ -19,7 +19,7 @@ def test_dividend_received(accounts, usd, aapl):
     )
     assert legs_by(tx) == {
         ("cash", "USD"): D("32.00"),
-        ("external", "USD"): D("-32.00"),
+        ("issuers", "USD"): D("-32.00"),
     }
     assert "AAPL" in tx.description
 
@@ -31,7 +31,7 @@ def test_dividend_received_with_tax(accounts, usd, aapl):
     assert legs_by(tx) == {
         ("cash", "USD"): D("85.00"),
         ("tax_withheld", "USD"): D("15.00"),
-        ("external", "USD"): D("-100.00"),
+        ("issuers", "USD"): D("-100.00"),
     }
 
 
@@ -42,7 +42,7 @@ def test_foreign_dividend_received(accounts, usd, aapl):
     assert legs_by(tx) == {
         ("cash", "USD"): D("70.00"),
         ("foreign_tax", "USD"): D("30.00"),
-        ("external", "USD"): D("-100.00"),
+        ("issuers", "USD"): D("-100.00"),
     }
 
 
@@ -60,13 +60,13 @@ def test_dividend_reinvested(accounts, usd):
     )
     assert legs_by(dividend) == {
         ("cash", "USD"): D("50.00"),
-        ("external", "USD"): D("-50.00"),
+        ("issuers", "USD"): D("-50.00"),
     }
     assert legs_by(purchase) == {
         ("holdings", "VTI"): D("0.1750"),
-        ("external", "VTI"): D("-0.1750"),
+        ("market", "VTI"): D("-0.1750"),
         ("cash", "USD"): D("-50.00"),
-        ("external", "USD"): D("50.00"),
+        ("market", "USD"): D("50.00"),
     }
 
 

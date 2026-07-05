@@ -149,15 +149,18 @@ a currency component, and book the currency component per Rule 5.
 Until then, cross-currency lot gains should be treated as indicative,
 not tax-grade.
 
-### 3.3 One coarse trading account *(nuance)*
+### 3.3 One coarse trading account *(resolved)*
 
 The tutorial suggests purpose-specific trading accounts (per customer,
-per position) so that FX gain *attribution* survives aggregation. We
-run one `external_counterparty` per user. The equation is indifferent;
-only attribution granularity is lost, and the lots layer recovers
-per-instrument attribution independently. If per-counterparty
-attribution is ever needed, the account model already permits multiple
-external accounts — this is a modelling choice, not a schema change.
+per position) so that FX gain *attribution* survives aggregation.
+Originally the ledger ran one `external_counterparty` per user; the
+world side is now partitioned into four purpose accounts —
+`market_counterparty` (trade mirrors), `owner_funding` (the owner's
+own money and property crossing the boundary), `issuer_counterparty`
+(dividends, interest in kind, corporate-action deliveries) and
+`currency_conversions`, which is Selinger's currency trading account
+proper: its per-instrument residue is the unrealized-FX position, and
+the realized-FX decomposition of §3.2 reads it directly.
 
 ## 4. Verdict
 
@@ -172,4 +175,4 @@ external accounts — this is a modelling choice, not a schema change.
 | Explicit realized gains (FIFO/LIFO/ACB) | FIFO lots engine | conforms for same-currency |
 | Explicit realized **FX** gains at conversion | blended into cross-currency lot gains | **gap** (§3.2) |
 | Single-transaction conversions via trading account | two balanced transactions when the source splits them | nuance (§3.1) |
-| Purpose-specific trading accounts | one external counterparty per user | nuance (§3.3) |
+| Purpose-specific trading accounts | four purpose accounts; `currency_conversions` is the FX register | conforms (§3.3) |

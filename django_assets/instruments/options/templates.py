@@ -105,7 +105,7 @@ def _settle_option(
         },
     ) as b:
         b.add_leg(account=routed(accounts, "holdings"), instrument=instrument, amount=option_delta)
-        b.add_leg(account=routed(accounts, "external"), instrument=instrument, amount=-option_delta)
+        b.add_leg(account=routed(accounts, "market"), instrument=instrument, amount=-option_delta)
         cash_net = Decimal(0)
         for row in basket:
             if "instrument" in row:
@@ -116,7 +116,7 @@ def _settle_option(
                     amount=amount,
                 )
                 b.add_leg(
-                    account=routed(accounts, "external"),
+                    account=routed(accounts, "market"),
                     instrument=row["instrument"],
                     amount=-amount,
                 )
@@ -127,7 +127,7 @@ def _settle_option(
         cash_net -= basket_side * strike_cash
         if cash_net:
             b.add_leg(account=routed(accounts, "cash"), instrument=ccy, amount=cash_net)
-            b.add_leg(account=routed(accounts, "external"), instrument=ccy, amount=-cash_net)
+            b.add_leg(account=routed(accounts, "market"), instrument=ccy, amount=-cash_net)
     assert b.transaction is not None
     return b.transaction
 
@@ -217,6 +217,6 @@ def expire_option(
         origin=origin,
     ) as b:
         b.add_leg(account=routed(accounts, "holdings"), instrument=instrument, amount=-qty)
-        b.add_leg(account=routed(accounts, "external"), instrument=instrument, amount=qty)
+        b.add_leg(account=routed(accounts, "market"), instrument=instrument, amount=qty)
     assert b.transaction is not None
     return b.transaction

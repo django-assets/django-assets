@@ -95,7 +95,7 @@ def test_unflip_edit_rematch_round_trip(processed):
 
 def test_unreconciled_legs_stay_editable(processed, accounts):
     """Fee/counterparty legs from the same rows are never locked."""
-    leg = TransactionLeg.objects.filter(account=accounts["external"]).first()
+    leg = TransactionLeg.objects.filter(account=accounts["market"]).first()
     leg.amount = leg.amount  # no-op numeric write
     leg.save()  # no error: not in any matched_legs
 

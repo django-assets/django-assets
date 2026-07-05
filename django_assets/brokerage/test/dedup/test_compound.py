@@ -39,8 +39,8 @@ def manual_sale(accounts, usd, aapl):
     ) as b:
         b.add_leg(account=accounts["cash"], instrument=usd, amount="200000.00")
         b.add_leg(account=accounts["holdings"], instrument=aapl, amount="-1000")
-        b.add_leg(account=accounts["external"], instrument=usd, amount="-200000.00")
-        b.add_leg(account=accounts["external"], instrument=aapl, amount="1000")
+        b.add_leg(account=accounts["market"], instrument=usd, amount="-200000.00")
+        b.add_leg(account=accounts["market"], instrument=aapl, amount="1000")
     return b.transaction
 
 
@@ -84,7 +84,7 @@ def test_split_destructive_confirm(batch, accounts, usd, aapl):
         metadata={"note": "user's precious note"},
     ) as b:
         b.add_leg(account=accounts["cash"], instrument=usd, amount="200000.00")
-        b.add_leg(account=accounts["external"], instrument=usd, amount="-200000.00")
+        b.add_leg(account=accounts["market"], instrument=usd, amount="-200000.00")
     manual = b.transaction
 
     process_batch(batch, two_fill_csv(600, "120000.00", 400, "80000.00"))
@@ -111,7 +111,7 @@ def test_compound_alternatives_kept(batch, accounts, usd, aapl, manual_sale):
         description="a different plausible sale",
     ) as b:
         b.add_leg(account=accounts["cash"], instrument=usd, amount="119000.00")
-        b.add_leg(account=accounts["external"], instrument=usd, amount="-119000.00")
+        b.add_leg(account=accounts["market"], instrument=usd, amount="-119000.00")
     process_batch(batch, two_fill_csv(600, "120000.00", 400, "80000.00"))
     line = batch.lines.get(line_number=1)
     best = current_proposal(line)

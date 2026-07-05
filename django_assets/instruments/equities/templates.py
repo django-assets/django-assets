@@ -80,7 +80,7 @@ def _cash_distribution(
         b.add_leg(account=routed(accounts, "cash"), instrument=ccy, amount=gross - withheld)
         if withheld:
             b.add_leg(account=routed(accounts, tax_key), instrument=ccy, amount=withheld)
-        b.add_leg(account=routed(accounts, "external"), instrument=ccy, amount=-gross)
+        b.add_leg(account=routed(accounts, "issuers"), instrument=ccy, amount=-gross)
     assert b.transaction is not None
     return b.transaction
 
@@ -178,7 +178,7 @@ def stock_split(
     return _corporate_action(
         accounts=accounts,
         tag=tags.corporate_action_tag("split", instrument, ratio=to_decimal(ratio, param="ratio")),
-        legs=[("holdings", instrument, qty), ("external", instrument, -qty)],
+        legs=[("holdings", instrument, qty), ("issuers", instrument, -qty)],
         timestamp=timestamp,
         trade_timestamp=trade_timestamp,
         description=f"{ratio}:1 split {instrument.code}",
@@ -202,7 +202,7 @@ def reverse_split(
         tag=tags.corporate_action_tag(
             "reverse_split", instrument, ratio=to_decimal(ratio, param="ratio")
         ),
-        legs=[("holdings", instrument, -qty), ("external", instrument, qty)],
+        legs=[("holdings", instrument, -qty), ("issuers", instrument, qty)],
         timestamp=timestamp,
         trade_timestamp=trade_timestamp,
         description=f"reverse split {instrument.code}",
@@ -226,7 +226,7 @@ def stock_dividend(
         tag=tags.corporate_action_tag(
             "stock_dividend", instrument, ratio=to_decimal(ratio, param="ratio")
         ),
-        legs=[("holdings", instrument, qty), ("external", instrument, -qty)],
+        legs=[("holdings", instrument, qty), ("issuers", instrument, -qty)],
         timestamp=timestamp,
         trade_timestamp=trade_timestamp,
         description=f"stock dividend {instrument.code}",
@@ -254,7 +254,7 @@ def spinoff(
             ratio=to_decimal(ratio, param="ratio"),
             new_instrument_id=new_instrument.pk,
         ),
-        legs=[("holdings", new_instrument, qty), ("external", new_instrument, -qty)],
+        legs=[("holdings", new_instrument, qty), ("issuers", new_instrument, -qty)],
         timestamp=timestamp,
         trade_timestamp=trade_timestamp,
         description=f"spinoff {new_instrument.code} from {instrument.code}",
@@ -282,9 +282,9 @@ def merger_exchange(
         ),
         legs=[
             ("holdings", instrument, -qty),
-            ("external", instrument, qty),
+            ("issuers", instrument, qty),
             ("holdings", new_instrument, new_qty),
-            ("external", new_instrument, -new_qty),
+            ("issuers", new_instrument, -new_qty),
         ],
         timestamp=timestamp,
         trade_timestamp=trade_timestamp,
@@ -309,7 +309,7 @@ def rights_offering(
         tag=tags.corporate_action_tag(
             "rights_offering", instrument, rights_instrument_id=rights_instrument.pk
         ),
-        legs=[("holdings", rights_instrument, qty), ("external", rights_instrument, -qty)],
+        legs=[("holdings", rights_instrument, qty), ("issuers", rights_instrument, -qty)],
         timestamp=timestamp,
         trade_timestamp=trade_timestamp,
         description=f"rights offering {instrument.code}",
@@ -339,11 +339,11 @@ def warrant_exercise(
         ),
         legs=[
             ("holdings", warrant_instrument, -qty),
-            ("external", warrant_instrument, qty),
+            ("issuers", warrant_instrument, qty),
             ("holdings", instrument, qty),
-            ("external", instrument, -qty),
+            ("issuers", instrument, -qty),
             ("cash", ccy, -paid),
-            ("external", ccy, paid),
+            ("issuers", ccy, paid),
         ],
         timestamp=timestamp,
         trade_timestamp=trade_timestamp,
@@ -395,8 +395,8 @@ def convert_instrument(
         b.add_leg(
             account=routed(accounts, "holdings"), instrument=from_instrument, amount=-from_qty
         )
-        b.add_leg(account=routed(accounts, "external"), instrument=from_instrument, amount=from_qty)
+        b.add_leg(account=routed(accounts, "issuers"), instrument=from_instrument, amount=from_qty)
         b.add_leg(account=routed(accounts, "holdings"), instrument=to_instrument, amount=to_qty)
-        b.add_leg(account=routed(accounts, "external"), instrument=to_instrument, amount=-to_qty)
+        b.add_leg(account=routed(accounts, "issuers"), instrument=to_instrument, amount=-to_qty)
     assert b.transaction is not None
     return b.transaction

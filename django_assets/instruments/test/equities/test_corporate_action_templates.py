@@ -27,7 +27,7 @@ def test_stock_split_golden(accounts, usd, aapl):
     )
     assert legs_by(tx) == {
         ("holdings", "AAPL"): D("300"),
-        ("external", "AAPL"): D("-300"),
+        ("issuers", "AAPL"): D("-300"),
     }
     assert tx.metadata["corporate_action"] == {
         "type": "split",
@@ -47,7 +47,7 @@ def test_reverse_split_golden(accounts, usd, aapl):
     )
     assert legs_by(tx) == {
         ("holdings", "AAPL"): D("-900"),
-        ("external", "AAPL"): D("900"),
+        ("issuers", "AAPL"): D("900"),
     }
     assert tx.metadata["corporate_action"]["type"] == "reverse_split"
     assert tx.metadata["corporate_action"]["ratio"] == "0.1"
@@ -73,7 +73,7 @@ def test_spinoff_golden(accounts, usd, aapl):
     )
     assert legs_by(tx) == {
         ("holdings", "SPINCO"): D("12"),
-        ("external", "SPINCO"): D("-12"),
+        ("issuers", "SPINCO"): D("-12"),
     }
     tag = tx.metadata["corporate_action"]
     assert tag["type"] == "spinoff"
@@ -93,9 +93,9 @@ def test_merger_exchange_golden(accounts, usd, aapl):
     )
     assert legs_by(tx) == {
         ("holdings", "AAPL"): D("-100"),
-        ("external", "AAPL"): D("100"),
+        ("issuers", "AAPL"): D("100"),
         ("holdings", "ACQ"): D("25"),
-        ("external", "ACQ"): D("-25"),
+        ("issuers", "ACQ"): D("-25"),
     }
     tag = tx.metadata["corporate_action"]
     assert tag["type"] == "merger_exchange"
@@ -123,10 +123,10 @@ def test_warrant_exercise_golden(accounts, usd, aapl):
     )
     assert legs_by(tx) == {
         ("holdings", "AAPL.WS"): D("-10"),
-        ("external", "AAPL.WS"): D("10"),
+        ("issuers", "AAPL.WS"): D("10"),
         ("holdings", "AAPL"): D("10"),
-        ("external", "AAPL"): D("-10"),
+        ("issuers", "AAPL"): D("-10"),
         ("cash", "USD"): D("-115.00"),
-        ("external", "USD"): D("115.00"),
+        ("issuers", "USD"): D("115.00"),
     }
     assert tx.metadata["corporate_action"]["type"] == "warrant_exercise"

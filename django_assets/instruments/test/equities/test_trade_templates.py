@@ -35,11 +35,11 @@ def test_buy_shares_golden_legs(accounts, usd, aapl):
     assert isinstance(tx, Transaction)
     assert legs_by(tx) == {
         ("holdings", "AAPL"): D("100"),
-        ("external", "AAPL"): D("-100"),
+        ("market", "AAPL"): D("-100"),
         ("cash", "USD"): D("-17551.06"),
         ("commissions", "USD"): D("1.00"),
         ("regulatory_fees", "USD"): D("0.06"),
-        ("external", "USD"): D("17550.00"),
+        ("market", "USD"): D("17550.00"),
     }
 
 
@@ -63,11 +63,11 @@ def test_sell_shares_golden_legs(accounts, usd, aapl):
     )
     assert legs_by(tx) == {
         ("holdings", "AAPL"): D("-100"),
-        ("external", "AAPL"): D("100"),
+        ("market", "AAPL"): D("100"),
         ("cash", "USD"): D("17998.94"),
         ("commissions", "USD"): D("1.00"),
         ("regulatory_fees", "USD"): D("0.06"),
-        ("external", "USD"): D("-18000.00"),
+        ("market", "USD"): D("-18000.00"),
     }
 
 
@@ -121,9 +121,9 @@ def test_short_shares_mirrors_sell(accounts, usd, aapl):
     )
     assert legs_by(tx) == {
         ("holdings", "AAPL"): D("-50"),
-        ("external", "AAPL"): D("50"),
+        ("market", "AAPL"): D("50"),
         ("cash", "USD"): D("10000.00"),
-        ("external", "USD"): D("-10000.00"),
+        ("market", "USD"): D("-10000.00"),
     }
 
 

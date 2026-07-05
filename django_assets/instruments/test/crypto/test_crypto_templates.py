@@ -38,7 +38,16 @@ def btc(usd):
 
 @pytest.fixture
 def accounts(user):
-    names = ["cash", "holdings", "external", "commissions", "network_fees"]
+    names = [
+        "cash",
+        "holdings",
+        "market",
+        "funding",
+        "issuers",
+        "conversions",
+        "commissions",
+        "network_fees",
+    ]
     return {n: Account.objects.create(owner=user, name=n) for n in names}
 
 
@@ -57,7 +66,7 @@ def test_deposit_crypto(accounts, btc):
     )
     assert legs_by(tx) == {
         ("holdings", "BTC"): D("0.5"),
-        ("external", "BTC"): D("-0.5"),
+        ("funding", "BTC"): D("-0.5"),
     }
 
 
@@ -73,7 +82,7 @@ def test_withdraw_crypto_with_network_fee(accounts, btc):
     assert legs_by(tx) == {
         ("holdings", "BTC"): D("-0.20010000"),
         ("network_fees", "BTC"): D("0.00010000"),
-        ("external", "BTC"): D("0.20000000"),
+        ("funding", "BTC"): D("0.20000000"),
     }
 
 
@@ -88,10 +97,10 @@ def test_buy_and_sell_crypto_share_the_trade_shape(accounts, usd, btc):
     )
     assert legs_by(buy) == {
         ("holdings", "BTC"): D("0.1"),
-        ("external", "BTC"): D("-0.1"),
+        ("market", "BTC"): D("-0.1"),
         ("cash", "USD"): D("-9004.50"),
         ("commissions", "USD"): D("4.50"),
-        ("external", "USD"): D("9000.00"),
+        ("market", "USD"): D("9000.00"),
     }
     sell = templates.sell_crypto(
         accounts=accounts, instrument=btc, quantity="0.10000000", price="95000.00", timestamp=TS
@@ -122,6 +131,6 @@ def test_hard_fork(accounts, usd, btc):
     )
     assert legs_by(tx) == {
         ("holdings", "BCH"): D("0.5"),
-        ("external", "BCH"): D("-0.5"),
+        ("issuers", "BCH"): D("-0.5"),
     }
     assert "BTC" in tx.description  # provenance in the description

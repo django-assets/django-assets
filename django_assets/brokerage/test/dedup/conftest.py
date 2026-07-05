@@ -28,6 +28,6 @@ def manual_buy(accounts, usd, aapl):  # noqa: F811
     ) as b:
         b.add_leg(account=accounts["cash"], instrument=usd, amount="-1755.55")
         b.add_leg(account=accounts["holdings"], instrument=aapl, amount="10")
-        b.add_leg(account=accounts["external"], instrument=usd, amount="1755.55")
-        b.add_leg(account=accounts["external"], instrument=aapl, amount="-10")
+        b.add_leg(account=accounts["market"], instrument=usd, amount="1755.55")
+        b.add_leg(account=accounts["market"], instrument=aapl, amount="-10")
     return b.transaction

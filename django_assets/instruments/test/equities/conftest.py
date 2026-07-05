@@ -36,7 +36,10 @@ def accounts(user):
     names = [
         "cash",
         "holdings",
-        "external",
+        "market",
+        "funding",
+        "issuers",
+        "conversions",
         "commissions",
         "regulatory_fees",
         "tax_withheld",
