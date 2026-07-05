@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from django_assets.lots.models import Lot, LotMatch, WashSaleAdjustment
+from django_assets.lots.models import WashSaleAdjustment
 from django_assets.lots.rebuild import rebuild_lots
 
 from ..conftest import at
@@ -60,11 +60,7 @@ def test_rebuild_idempotent_with_adjustments(accounts, aapl, buy, sell):
     sell("100", "40.00", at(100))
     buy("100", "42.00", at(110))
     rebuild_lots(accounts["holdings"])
-    first = list(
-        WashSaleAdjustment.objects.values_list("disallowed_loss", flat=True)
-    )
+    first = list(WashSaleAdjustment.objects.values_list("disallowed_loss", flat=True))
     rebuild_lots(accounts["holdings"])
-    second = list(
-        WashSaleAdjustment.objects.values_list("disallowed_loss", flat=True)
-    )
+    second = list(WashSaleAdjustment.objects.values_list("disallowed_loss", flat=True))
     assert first == second == [D("1000.00")]

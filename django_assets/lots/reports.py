@@ -38,7 +38,10 @@ def realized_gains(
             "realized_gain": match.realized_gain,
             "term": match.term,
             "unlinked": bool(match.lot.metadata.get("unlinked")),
-            "wash_sale_disallowed": Decimal(0),  # populated by L4
+            "wash_sale_disallowed": sum(
+                (adj.disallowed_loss for adj in match.wash_sale_adjustments.all()),
+                Decimal(0),
+            ),
         }
         if match.metadata.get("cross_currency"):
             basis_currency = match.metadata["basis_currency"]
@@ -63,6 +66,28 @@ def realized_gains(
                 row["realized_gain"] = None  # honest pair, no single number
         rows.append(row)
     return rows
+
+
+def unrealized(
+    account: Account,
+    price_source: Any,
+    instrument: Instrument | None = None,
+) -> "dict[str, Any]":
+    """Open positions marked via a PriceSource (ADR-0034): unpriced
+    lots are surfaced, never zeroed."""
+    from django_assets.lots.queries import open_lots
+
+    total = Decimal(0)
+    unpriced: list[str] = []
+    for lot in open_lots(account, instrument):
+        quote = price_source.get_price(lot.instrument)
+        if quote is None:
+            unpriced.append(lot.instrument.code)
+            continue
+        sign = 1 if lot.direction == "long" else -1
+        market = quote.price * lot.quantity_remaining * lot.instrument.multiplier
+        total += sign * (market - lot.cost_basis_remaining)
+    return {"unrealized_gain": total, "unpriced": unpriced}
 
 
 def open_lots_report(

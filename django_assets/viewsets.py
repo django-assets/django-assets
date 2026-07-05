@@ -29,6 +29,7 @@ from django_assets.core.models import (
 )
 from django_assets.instruments.models import CorporateAction
 from django_assets.instruments.options.models import OptionMeta
+from django_assets.lots.models import Lot, LotMatch
 from django_assets.serializers import (
     AccountSerializer,
     CorporateActionSerializer,
@@ -38,6 +39,8 @@ from django_assets.serializers import (
     ImportLineProposalSerializer,
     ImportLineSerializer,
     InstrumentSerializer,
+    LotMatchSerializer,
+    LotSerializer,
     OptionMetaSerializer,
     TradeSerializer,
     VirtualTransferSerializer,
@@ -340,3 +343,13 @@ class TradeViewSet(viewsets.ReadOnlyModelViewSet[Trade]):
 class VirtualTransferViewSet(viewsets.ReadOnlyModelViewSet[VirtualTransfer]):
     queryset = VirtualTransfer.objects.prefetch_related("entries")
     serializer_class = VirtualTransferSerializer
+
+
+class LotViewSet(viewsets.ReadOnlyModelViewSet[Lot]):
+    queryset = Lot.objects.select_related("instrument").order_by("acquired_at", "id")
+    serializer_class = LotSerializer
+
+
+class LotMatchViewSet(viewsets.ReadOnlyModelViewSet[LotMatch]):
+    queryset = LotMatch.objects.select_related("lot").order_by("id")
+    serializer_class = LotMatchSerializer

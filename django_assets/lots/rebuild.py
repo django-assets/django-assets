@@ -42,6 +42,7 @@ def rebuild_lots(
         _materialize_links(account)
         Lot.objects.filter(account=account).delete()
         _build_scope(account)
+        _detect_wash_sales(account)
         _assert_conservation(account)
         StaleLotScope.objects.filter(account=account).delete()
 
@@ -393,6 +394,45 @@ def _attributable_cash(transaction: Transaction, account: Account) -> Decimal:
         return Decimal(0)
     user_cash = max(cash_legs, key=lambda leg: abs(leg.amount))
     return user_cash.amount
+
+
+def _detect_wash_sales(account: Account) -> None:
+    """±30-day, same-instrument window (lots spec §2.5, D-37): the
+    disallowed loss — prorated by replaced quantity — becomes a basis
+    addition on the replacement lot, recorded ADDITIVELY; the original
+    match rows stay untouched. Runs inside every rebuild, so the rows
+    are as deterministic as everything else here."""
+    window = datetime.timedelta(days=30)
+    losses = (
+        LotMatch.objects.filter(lot__account=account, realized_gain__lt=0, lot__direction="long")
+        .select_related("lot", "closing_leg__transaction")
+        .order_by("closing_leg__transaction__timestamp", "id")
+    )
+    for loss in losses:
+        closed_at = loss.closing_leg.transaction.timestamp
+        replacement = (
+            Lot.objects.filter(
+                account=account,
+                instrument=loss.lot.instrument,
+                acquired_at__gte=closed_at - window,
+                acquired_at__lte=closed_at + window,
+            )
+            .exclude(pk=loss.lot_id)
+            .exclude(opened_by_leg=loss.closing_leg)
+            .order_by("acquired_at", "id")
+            .first()
+        )
+        if replacement is None:
+            continue
+        replaced = min(replacement.quantity, loss.quantity)
+        disallowed = -loss.realized_gain * replaced / loss.quantity
+        from django_assets.lots.models import WashSaleAdjustment
+
+        WashSaleAdjustment.objects.create(
+            loss_match=loss,
+            replacement_lot=replacement,
+            disallowed_loss=disallowed,
+        )
 
 
 def _assert_conservation(account: Account) -> None:
