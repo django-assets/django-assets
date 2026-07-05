@@ -28,6 +28,12 @@ from django_assets.lots.models import (
 
 ADJUSTING_ACTIONS = ("split", "reverse_split", "stock_dividend")
 
+#: Column scale of every lots amount field: computed slices quantize to
+#: it BEFORE entering running remainders, so Python state and stored
+#: rows stay bit-identical (division yields 28 significant digits;
+#: the DB keeps 18 decimal places).
+Q18 = Decimal("1E-18")
+
 
 def rebuild_lots(
     account: Account,
@@ -232,7 +238,7 @@ def _open_from_carry(
     from_ccy = conversion.from_instrument.price_currency
     from_currency = from_ccy.code if from_ccy is not None else ""
     for acquired_at, basis, source_qty in carry:
-        target_quantity = Decimal(source_qty) * ratio
+        target_quantity = (Decimal(source_qty) * ratio).quantize(Q18)
         sign = 1 if leg.amount > 0 else -1
         _open_lot(
             walk,
@@ -260,6 +266,7 @@ def _close_against(
     lots = walk.open_lots.get(closing_leg.instrument_id, [])
     to_close = abs(closing_leg.amount)
     total = to_close
+    cash_left = abs(cash)
     released_total = Decimal(0)
     carry: list[tuple[datetime.datetime, Decimal, str]] = []
     for lot in lots:
@@ -268,13 +275,21 @@ def _close_against(
         if lot.quantity_remaining == 0:
             continue
         consumed = min(lot.quantity_remaining, to_close)
-        share = consumed / lot.quantity
-        basis_recovered = lot.cost_basis * share
+        if consumed == lot.quantity_remaining:
+            # Exhausting the lot: take the exact remaining basis — the
+            # proportional formula can leave non-terminating residue.
+            basis_recovered = lot.cost_basis_remaining
+        else:
+            basis_recovered = (lot.cost_basis * consumed / lot.quantity).quantize(Q18)
         if zero_gain:
             proceeds = basis_recovered
             gain = Decimal(0)
         else:
-            proceeds = abs(cash) * consumed / total if total else Decimal(0)
+            if consumed == to_close:
+                proceeds = cash_left  # final slice absorbs cash rounding
+            else:
+                proceeds = (abs(cash) * consumed / total).quantize(Q18) if total else Decimal(0)
+            cash_left -= proceeds
             gain = (
                 proceeds - basis_recovered
                 if lot.direction == "long"
@@ -450,6 +465,7 @@ def _assert_conservation(account: Account) -> None:
             and 0 <= lot.quantity_remaining <= lot.quantity
         )
         assert ok, (
-            f"lot conservation violated for lot {lot.pk}: "
-            f"remaining {lot.quantity_remaining} vs {lot.quantity} − {matched}"
+            f"lot conservation violated for lot {lot.pk}: quantity "
+            f"{lot.quantity_remaining} vs {lot.quantity} − {matched}; basis "
+            f"{lot.cost_basis_remaining} vs {lot.cost_basis} − {recovered}"
         )

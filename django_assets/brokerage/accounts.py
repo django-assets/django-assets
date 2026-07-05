@@ -28,6 +28,7 @@ DEFAULT_ACCOUNT_NAMES = {
     "network_fees": "network_fees_paid",
     "account_fees": "account_fees_paid",
     "wire_fees": "wire_fees_paid",
+    "margin_interest": "margin_interest_paid",
 }
 
 

@@ -30,6 +30,7 @@ ROUTING_KEYS = (
     "wire_fees",
     "adr_fees",
     "interest",
+    "margin_interest",
 )
 
 

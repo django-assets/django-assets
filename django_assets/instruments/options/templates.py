@@ -203,6 +203,7 @@ def expire_option(
     contracts: Amount,
     timestamp: datetime.datetime,
     trade_timestamp: datetime.datetime | None = None,
+    description: str = "",
     origin: str = "manual",
 ) -> Transaction:
     """Worthless expiry: signed `contracts` matches the open position
@@ -212,7 +213,7 @@ def expire_option(
         account=routed(accounts, "holdings"),
         timestamp=timestamp,
         trade_timestamp=trade_timestamp,
-        description=f"expire {contracts} {instrument.code}",
+        description=description or f"expire {contracts} {instrument.code}",
         origin=origin,
     ) as b:
         b.add_leg(account=routed(accounts, "holdings"), instrument=instrument, amount=-qty)
