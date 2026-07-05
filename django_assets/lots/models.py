@@ -167,10 +167,20 @@ class WashSaleAdjustment(models.Model):
 
 class StaleLotScope(models.Model):
     """A ledger edit touched this (account, instrument) pair; any query
-    against it rebuilds transparently first (ADR-0032 §4)."""
+    against it rebuilds transparently first (ADR-0032 §4).
 
-    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="+")
-    instrument = models.ForeignKey(Instrument, on_delete=models.CASCADE, related_name="+")
+    Scratch state: no DB-level FK constraints (db_constraint=False) —
+    the mark-stale signal fires during cascade deletes of whole
+    accounts, where a constrained insert would orphan against the dying
+    row at COMMIT. Rows for gone accounts are inert and swept by the
+    next rebuild's delete."""
+
+    account = models.ForeignKey(
+        Account, on_delete=models.CASCADE, related_name="+", db_constraint=False
+    )
+    instrument = models.ForeignKey(
+        Instrument, on_delete=models.CASCADE, related_name="+", db_constraint=False
+    )
     marked_at = models.DateTimeField(auto_now=True)
 
     objects: ClassVar[models.Manager["StaleLotScope"]] = models.Manager()

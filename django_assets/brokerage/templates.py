@@ -308,3 +308,82 @@ def adr_fee_deducted(
         description=description,
         origin=origin,
     )
+
+
+def interest_charged(
+    *,
+    accounts: AccountMap,
+    currency: Instrument,
+    amount: Amount,
+    timestamp: datetime.datetime,
+    trade_timestamp: datetime.datetime | None = None,
+    description: str = "",
+    origin: str = "manual",
+) -> Transaction:
+    """Margin/debit interest paid (expense tracker accumulates +)."""
+    return _fee_template(
+        accounts=accounts,
+        currency=currency,
+        amount=amount,
+        tracker_key="margin_interest",
+        kind="interest charged",
+        timestamp=timestamp,
+        trade_timestamp=trade_timestamp,
+        description=description,
+        origin=origin,
+    )
+
+
+def tax_withholding(
+    *,
+    accounts: AccountMap,
+    currency: Instrument,
+    amount: Amount,
+    tracker_key: str = "tax_withheld",
+    timestamp: datetime.datetime,
+    trade_timestamp: datetime.datetime | None = None,
+    description: str = "",
+    origin: str = "manual",
+) -> Transaction:
+    """Standalone withholding row (broker posts tax separately from the
+    income event): cash out, tracking account accumulates the paid tax."""
+    return _fee_template(
+        accounts=accounts,
+        currency=currency,
+        amount=amount,
+        tracker_key=tracker_key,
+        kind="tax withheld",
+        timestamp=timestamp,
+        trade_timestamp=trade_timestamp,
+        description=description,
+        origin=origin,
+    )
+
+
+def quantity_adjustment(
+    *,
+    accounts: AccountMap,
+    instrument: Instrument,
+    quantity: Amount,
+    timestamp: datetime.datetime,
+    trade_timestamp: datetime.datetime | None = None,
+    description: str = "",
+    origin: str = "manual",
+    metadata: "dict[str, object] | None" = None,
+) -> Transaction:
+    """Signed in-kind position adjustment against the counterparty:
+    transfers in/out, journaled shares, merger legs without a pairing —
+    the inventory's quantity_adjustment (ADR-0019 checklist)."""
+    value = to_decimal(quantity, param="quantity")
+    with TransactionBuilder(
+        account=routed(accounts, "holdings"),
+        timestamp=timestamp,
+        trade_timestamp=trade_timestamp,
+        description=description or f"quantity adjustment {quantity} {instrument.code}",
+        origin=origin,
+        metadata=metadata,
+    ) as b:
+        b.add_leg(account=routed(accounts, "holdings"), instrument=instrument, amount=value)
+        b.add_leg(account=routed(accounts, "external"), instrument=instrument, amount=-value)
+    assert b.transaction is not None
+    return b.transaction

@@ -26,7 +26,9 @@ def user():
 
 @pytest.fixture
 def usd():
-    return Instrument.objects.create(code="USD", quantity_decimals=2)
+    instrument = Instrument.objects.create(code="USD", quantity_decimals=2)
+    Identifier.objects.create(instrument=instrument, type="ticker", value="USD")
+    return instrument
 
 
 @pytest.fixture
