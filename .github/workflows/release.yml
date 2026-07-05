@@ -1,0 +1,112 @@
+# Release ladder (PADR-0011 §5): vX.Y.ZrcN tag → build → TestPyPI →
+# clean-venv install-from-TestPyPI + dev-project smoke; final vX.Y.Z
+# tag → PyPI. Every release goes through an rc first.
+#
+# Secrets required: TEST_PYPI_API_TOKEN, PYPI_API_TOKEN.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+rc[0-9]+"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Version must match the tag
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION=$(uv run --no-project python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "$TAG" = "$VERSION" || { echo "tag $TAG != pyproject $VERSION"; exit 1; }
+      - run: uv build
+      - name: Wheel sanity
+        run: unzip -l dist/*.whl | grep -q "django_assets/py.typed"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-testpypi:
+    # Release candidates land on TestPyPI only.
+    if: contains(github.ref_name, 'rc')
+    needs: build
+    runs-on: ubuntu-latest
+    environment: testpypi
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: astral-sh/setup-uv@v5
+      - run: uv publish --publish-url https://test.pypi.org/legacy/ --token "$TOKEN" dist/*
+        env:
+          TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
+
+  smoke-testpypi:
+    # Clean-venv install from TestPyPI + dev-project boot smoke.
+    if: contains(github.ref_name, 'rc')
+    needs: publish-testpypi
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: django_assets
+          POSTGRES_PASSWORD: django_assets
+          POSTGRES_DB: django_assets_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U django_assets"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install ONLY from TestPyPI (deps from PyPI) in a clean venv
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          uv venv /tmp/smoke
+          for i in 1 2 3 4 5; do
+            VIRTUAL_ENV=/tmp/smoke uv pip install \
+              --index-url https://pypi.org/simple \
+              --extra-index-url https://test.pypi.org/simple/ \
+              --index-strategy unsafe-best-match \
+              "django-assets==$VERSION" && break
+            echo "TestPyPI not consistent yet; retry $i"; sleep 30
+          done
+      - name: dev-project smoke (migrate + checks) against the installed wheel
+        # Copy the host project OUT of the checkout so django_assets
+        # resolves from the installed wheel, never the source tree.
+        run: |
+          mkdir /tmp/host
+          cp -r dev_project manage.py /tmp/host/
+          cd /tmp/host
+          /tmp/smoke/bin/python manage.py migrate --no-input
+          /tmp/smoke/bin/python manage.py check
+          /tmp/smoke/bin/python manage.py install_ledger_ddl
+        env:
+          DJANGO_SETTINGS_MODULE: dev_project.settings.test
+          POSTGRES_HOST: 127.0.0.1
+
+  publish-pypi:
+    # Finals only — and every final must follow a green rc.
+    if: ${{ !contains(github.ref_name, 'rc') }}
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: astral-sh/setup-uv@v5
+      - run: uv publish --token "$TOKEN" dist/*
+        env:
+          TOKEN: ${{ secrets.PYPI_API_TOKEN }}
