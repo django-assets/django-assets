@@ -1,5 +1,12 @@
 from django.apps import AppConfig
-from django.db.models.signals import m2m_changed, post_migrate, pre_delete, pre_save
+from django.db.models.signals import (
+    m2m_changed,
+    post_delete,
+    post_migrate,
+    post_save,
+    pre_delete,
+    pre_save,
+)
 
 
 class DjangoAssetsConfig(AppConfig):
@@ -71,4 +78,19 @@ class DjangoAssetsConfig(AppConfig):
             guard_same_user_tags,
             sender=Trade.tags.through,
             dispatch_uid="django_assets.guard_same_user_tags",
+        )
+
+        # 7. Lots staleness marking (ADR-0032 §4): ledger edits invalidate
+        #    exactly the touched (account, instrument) pair.
+        from django_assets.lots.signals import mark_stale
+
+        post_save.connect(
+            mark_stale,
+            sender=TransactionLeg,
+            dispatch_uid="django_assets.lots_mark_stale_save",
+        )
+        post_delete.connect(
+            mark_stale,
+            sender=TransactionLeg,
+            dispatch_uid="django_assets.lots_mark_stale_delete",
         )

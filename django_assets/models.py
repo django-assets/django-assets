@@ -25,6 +25,15 @@ from django_assets.instruments.currencies.models import CurrencyMeta
 from django_assets.instruments.equities.models import EquityMeta
 from django_assets.instruments.models import CorporateAction
 from django_assets.instruments.options.models import Deliverable, OptionMeta
+from django_assets.lots.models import (
+    ConversionLink,
+    ExerciseLink,
+    Lot,
+    LotEvent,
+    LotMatch,
+    StaleLotScope,
+    WashSaleAdjustment,
+)
 from django_assets.trades.models import (
     Tag,
     TagCategory,
@@ -41,15 +50,21 @@ __all__ = [
     "CryptoMeta",
     "DisclosureEvent",
     "CurrencyMeta",
+    "ConversionLink",
     "Deliverable",
     "EquityMeta",
     "Exchange",
+    "ExerciseLink",
     "Identifier",
     "ImportBatch",
     "ImportLine",
     "ImportLineProposal",
+    "Lot",
+    "LotEvent",
+    "LotMatch",
     "Instrument",
     "OptionMeta",
+    "StaleLotScope",
     "Tag",
     "TagCategory",
     "Trade",
@@ -58,5 +73,6 @@ __all__ = [
     "TransactionImport",
     "TransactionLeg",
     "VirtualEntry",
+    "WashSaleAdjustment",
     "VirtualTransfer",
 ]

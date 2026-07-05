@@ -19,6 +19,7 @@ from types import TracebackType
 from typing import Any, Literal, Self
 
 from django.db import transaction as db_transaction
+from django.db.models.signals import post_save
 
 from django_assets import conf
 from django_assets.core.exceptions import MixedOwnershipError, UnbalancedTransactionError
@@ -45,6 +46,13 @@ class BulkImportResult:
     transactions: list["Transaction"] = field(default_factory=list)
     """Created rows in input order (failed rows omitted) — the brokerage
     import wrapper links TransactionImport provenance from these."""
+
+
+def _emit_leg_signals(legs: "list[TransactionLeg]", using: str) -> None:
+    """bulk_create skips post_save; the supported write paths emit it so
+    derived books (lots staleness, host listeners) see every leg."""
+    for leg in legs:
+        post_save.send(sender=TransactionLeg, instance=leg, created=True, raw=False, using=using)
 
 
 def _invalidate_cachalot(using: str) -> None:
@@ -137,6 +145,7 @@ class TransactionBuilder:
             for leg in self._legs:
                 leg.transaction = tx
             TransactionLeg.objects.using(self.using).bulk_create(self._legs)
+            _emit_leg_signals(self._legs, self.using)
         self.transaction = tx
 
     def _assert_balanced(self) -> None:
@@ -241,6 +250,7 @@ class TransactionBuilder:
                             leg.transaction = tx
                         all_legs.extend(legs)
                     TransactionLeg.objects.using(using).bulk_create(all_legs)
+                    _emit_leg_signals(all_legs, using)
                 _invalidate_cachalot(using)
                 inserted += len(prepared)
                 created.extend(tx for tx, _ in prepared)
