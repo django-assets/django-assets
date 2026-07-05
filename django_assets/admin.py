@@ -24,6 +24,14 @@ from django_assets.instruments.admin import (
     EquityMetaAdmin,
     OptionMetaAdmin,
 )
+from django_assets.lots.admin import (
+    ConversionLinkAdmin,
+    ExerciseLinkAdmin,
+    LotAdmin,
+    LotEventAdmin,
+    LotMatchAdmin,
+    WashSaleAdjustmentAdmin,
+)
 from django_assets.trades.admin import (
     TagAdmin,
     TagCategoryAdmin,
@@ -37,14 +45,19 @@ __all__ = [
     "AccountProfileAdmin",
     "CorporateActionAdmin",
     "CryptoMetaAdmin",
+    "ConversionLinkAdmin",
     "CurrencyMetaAdmin",
     "DisclosureEventAdmin",
     "EquityMetaAdmin",
     "ExchangeAdmin",
+    "ExerciseLinkAdmin",
     "IdentifierAdmin",
     "ImportBatchAdmin",
     "ImportLineAdmin",
     "ImportLineProposalAdmin",
+    "LotAdmin",
+    "LotEventAdmin",
+    "LotMatchAdmin",
     "InstrumentAdmin",
     "OptionMetaAdmin",
     "TagAdmin",
@@ -54,5 +67,6 @@ __all__ = [
     "TransactionAdmin",
     "TransactionImportAdmin",
     "VirtualTransferAdmin",
+    "WashSaleAdjustmentAdmin",
     "TransactionLegAdmin",
 ]

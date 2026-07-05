@@ -40,6 +40,7 @@ from django_assets.instruments.currencies.models import CurrencyMeta
 from django_assets.instruments.equities.models import EquityMeta
 from django_assets.instruments.models import CorporateAction
 from django_assets.instruments.options.models import Deliverable, OptionMeta
+from django_assets.lots.models import Lot, LotMatch
 from django_assets.trades.models import (
     Tag,
     TagCategory,
@@ -447,3 +448,40 @@ class VirtualTransferSerializer(serializers.ModelSerializer[VirtualTransfer]):
     class Meta:
         model = VirtualTransfer
         fields = ["id", "user", "timestamp", "description", "metadata", "entries"]
+
+
+class LotSerializer(serializers.ModelSerializer[Lot]):
+    instrument_code = serializers.CharField(source="instrument.code", read_only=True)
+
+    class Meta:
+        model = Lot
+        fields = [
+            "id",
+            "account",
+            "instrument",
+            "instrument_code",
+            "acquired_at",
+            "quantity",
+            "quantity_remaining",
+            "cost_basis",
+            "cost_basis_remaining",
+            "direction",
+            "rollover_linked",
+            "metadata",
+        ]
+
+
+class LotMatchSerializer(serializers.ModelSerializer[LotMatch]):
+    class Meta:
+        model = LotMatch
+        fields = [
+            "id",
+            "lot",
+            "closing_leg",
+            "quantity",
+            "proceeds",
+            "basis_recovered",
+            "realized_gain",
+            "term",
+            "metadata",
+        ]
