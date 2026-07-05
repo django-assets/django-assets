@@ -25,6 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 drf = ["djangorestframework>=3.14,<4.0"]
+pdf = ["pdfplumber>=0.11"]
 
 [dependency-groups]
 dev = [
@@ -37,6 +38,8 @@ dev = [
     "coverage==7.5.0",
     # DRF surface tests (the drf extra mirrors this pin)
     "djangorestframework>=3.14,<4.0",
+    # PDF statement parsing (the pdf extra mirrors this pin)
+    "pdfplumber>=0.11",
     # Lint / type-check
     "ruff>=0.15.9",
     "mypy>=1.13",

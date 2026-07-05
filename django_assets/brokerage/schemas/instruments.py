@@ -34,7 +34,7 @@ ROBINHOOD_OPTION_DESC = re.compile(
 def parse_money(value: str) -> Decimal:
     """Broker money: '$1,234.56', '-$9.16', '($5.00)' → signed Decimal."""
     text = value.strip()
-    if not text:
+    if not text or text == "-":  # dash = empty cell on statement PDFs
         return Decimal(0)
     negative = text.startswith("(") and text.endswith(")")
     if negative:
