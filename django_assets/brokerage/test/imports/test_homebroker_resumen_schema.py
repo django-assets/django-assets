@@ -88,9 +88,7 @@ def test_homebroker_resumen_parses_and_reconciles(accounts):
     assert balances["ext_open"] == "135.00"
     assert balances["ext_close"] == "184.65"
 
-    assert not batch.lines.filter(
-        kind__startswith="broker_", matched_legs__isnull=True
-    ).exists()
+    assert not batch.lines.filter(kind__startswith="broker_", matched_legs__isnull=True).exists()
 
     ars = ensure_currency("ARS")
     usd = ensure_currency("USD")
