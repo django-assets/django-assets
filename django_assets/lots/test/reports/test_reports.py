@@ -83,3 +83,27 @@ def test_drf_read_only_no_auth(accounts, aapl, buy):
         cls = getattr(viewsets, name)
         assert "authentication_classes" not in vars(cls)
         assert "permission_classes" not in vars(cls)
+
+
+def test_owner_scoping_when_host_mounts_auth(accounts, aapl, buy, user):
+    """D-18 refined: no default auth ships, but an authenticated request
+    only ever sees its own books."""
+    from rest_framework.test import APIRequestFactory, force_authenticate
+
+    from django_assets import viewsets
+    from django_assets.lots.rebuild import rebuild_lots
+
+    buy("100", "50.00", at(0))
+    rebuild_lots(accounts["holdings"])
+
+    stranger = get_user_model().objects.create_user(username="stranger", password="x")
+    factory = APIRequestFactory()
+    request = factory.get("/lots/")
+    force_authenticate(request, user=stranger)
+    response = viewsets.LotViewSet.as_view({"get": "list"})(request)
+    assert response.data == []  # nothing of the other user leaks
+
+    request = factory.get("/lots/")
+    force_authenticate(request, user=user)
+    response = viewsets.LotViewSet.as_view({"get": "list"})(request)
+    assert len(response.data) == 1
