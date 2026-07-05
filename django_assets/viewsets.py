@@ -48,6 +48,26 @@ from django_assets.serializers import (
 from django_assets.trades.models import Trade, VirtualTransfer
 
 
+class OwnerScopedMixin:
+    """Defense-in-depth (D-18 refined): the package still ships no auth
+    or permission classes — hosts mount those — but when a host's auth
+    HAS authenticated the request, user-owned rows scope to that user
+    automatically, so a mounted-but-unscoped router can never leak
+    another user's books. Anonymous requests (a host that deliberately
+    mounted without auth) see the unscoped queryset — their choice.
+    Subclasses set `owner_path` to the user-relation lookup."""
+
+    owner_path: str = ""
+
+    def get_queryset(self) -> Any:
+        queryset = super().get_queryset()  # type: ignore[misc]
+        request = getattr(self, "request", None)
+        user = getattr(request, "user", None)
+        if self.owner_path and user is not None and user.is_authenticated:
+            queryset = queryset.filter(**{self.owner_path: user})
+        return queryset
+
+
 class ExchangeViewSet(viewsets.ReadOnlyModelViewSet[Exchange]):
     queryset = Exchange.objects.all()
     serializer_class = ExchangeSerializer
@@ -63,7 +83,8 @@ class IdentifierViewSet(viewsets.ReadOnlyModelViewSet[Identifier]):
     serializer_class = IdentifierSerializer
 
 
-class AccountViewSet(viewsets.ReadOnlyModelViewSet[Account]):
+class AccountViewSet(OwnerScopedMixin, viewsets.ReadOnlyModelViewSet[Account]):
+    owner_path = "owner"
     queryset = Account.objects.all()
     serializer_class = AccountSerializer
 
@@ -99,9 +120,10 @@ class SchemaRegistryViewSet(viewsets.ViewSet):
         )
 
 
-class ImportLineViewSet(viewsets.ReadOnlyModelViewSet[ImportLine]):
+class ImportLineViewSet(OwnerScopedMixin, viewsets.ReadOnlyModelViewSet[ImportLine]):
     """The review queue: list/detail plus match/unmatch actions."""
 
+    owner_path = "batch__account__owner"
     queryset = ImportLine.objects.all().order_by("batch_id", "line_number")
     serializer_class = ImportLineSerializer
 
@@ -226,12 +248,13 @@ class ImportLineViewSet(viewsets.ReadOnlyModelViewSet[ImportLine]):
         return Response({"resolution": "confirmed"})
 
 
-class TransactionViewSet(viewsets.ReadOnlyModelViewSet):  # type: ignore[type-arg]
+class TransactionViewSet(OwnerScopedMixin, viewsets.ReadOnlyModelViewSet):  # type: ignore[type-arg]
     """Read-only transactions + the ADR-0023 reconstruction endpoint."""
 
     from django_assets.core.models import Transaction as _Transaction
     from django_assets.serializers import TransactionSerializer as _TransactionSerializer
 
+    owner_path = "account__owner"
     queryset = _Transaction.objects.all().order_by("timestamp", "id")
     serializer_class = _TransactionSerializer
 
@@ -242,7 +265,8 @@ class TransactionViewSet(viewsets.ReadOnlyModelViewSet):  # type: ignore[type-ar
         return Response(reconstruct_original(self.get_object()))
 
 
-class DisclosureEventViewSet(viewsets.ReadOnlyModelViewSet[DisclosureEvent]):
+class DisclosureEventViewSet(OwnerScopedMixin, viewsets.ReadOnlyModelViewSet[DisclosureEvent]):
+    owner_path = "transaction__account__owner"
     queryset = DisclosureEvent.objects.select_related("transaction")
     serializer_class = DisclosureEventSerializer
 
@@ -253,10 +277,11 @@ class DisclosureEventViewSet(viewsets.ReadOnlyModelViewSet[DisclosureEvent]):
         return Response(reconstruct_before(self.get_object()))
 
 
-class TradeViewSet(viewsets.ReadOnlyModelViewSet[Trade]):
+class TradeViewSet(OwnerScopedMixin, viewsets.ReadOnlyModelViewSet[Trade]):
     """Trades queue + mutation actions (spec §7): rule violations come
     back as 400s, never 500s. Hosts mount URLs and own auth (D-18)."""
 
+    owner_path = "user"
     queryset = Trade.objects.all().order_by("pk")
     serializer_class = TradeSerializer
 
@@ -340,16 +365,19 @@ class TradeViewSet(viewsets.ReadOnlyModelViewSet[Trade]):
         )
 
 
-class VirtualTransferViewSet(viewsets.ReadOnlyModelViewSet[VirtualTransfer]):
+class VirtualTransferViewSet(OwnerScopedMixin, viewsets.ReadOnlyModelViewSet[VirtualTransfer]):
+    owner_path = "user"
     queryset = VirtualTransfer.objects.prefetch_related("entries")
     serializer_class = VirtualTransferSerializer
 
 
-class LotViewSet(viewsets.ReadOnlyModelViewSet[Lot]):
+class LotViewSet(OwnerScopedMixin, viewsets.ReadOnlyModelViewSet[Lot]):
+    owner_path = "account__owner"
     queryset = Lot.objects.select_related("instrument").order_by("acquired_at", "id")
     serializer_class = LotSerializer
 
 
-class LotMatchViewSet(viewsets.ReadOnlyModelViewSet[LotMatch]):
+class LotMatchViewSet(OwnerScopedMixin, viewsets.ReadOnlyModelViewSet[LotMatch]):
+    owner_path = "lot__account__owner"
     queryset = LotMatch.objects.select_related("lot").order_by("id")
     serializer_class = LotMatchSerializer
