@@ -169,6 +169,55 @@ class HomeBrokerResumenPdf2018(ImportSchema):
         """The CNV resumen names its comitente and movement ledger."""
         return "Comitente:" in sample and "DETALLE DE MOVIMIENTOS" in sample
 
+    def parse_positions(self, source: Any) -> "list[Any]":
+        """ADR-0036: the CLOSING «POSICION AL <hasta>» security rows
+        (cash rows excluded — the triple-currency acceptance owns
+        them). Quantities come from the positional qty tag."""
+        from django_assets.brokerage.schemas.positions import StatementPosition
+
+        lines = _tagged_lines(source)
+        period = next((m for line in lines if (m := PERIOD_LINE.search(TAG.sub("", line)))), None)
+        desde = period.group(1) if period else ""
+        hasta = period.group(2) if period else ""
+        positions: list[Any] = []
+        in_closing = False
+        for raw in lines:
+            line = raw.strip()
+            plain = TAG.sub("", line).strip()
+            if plain.startswith("POSICION AL "):
+                date = plain.split("POSICION AL ", 1)[1][:8]
+                in_closing = date == hasta or desde == hasta
+                continue
+            if plain.startswith(("TOTAL POSICION", "INCREMENTOS", "DETALLE")):
+                in_closing = False
+                continue
+            if not in_closing:
+                continue
+            if plain.startswith(
+                (
+                    "PESOS ",
+                    "DOLARES ",
+                    "DOLARUSA",
+                    "DOLAR EXTERIOR",
+                    "U$ ",
+                    "U$S ",
+                    "CASH",
+                    "Especie ",
+                )
+            ):
+                continue
+            tags = {m["key"]: m["value"] for m in TAG.finditer(line)}
+            head = plain.split()
+            if tags.get("qty") and head and TICKER.fullmatch(head[0]):
+                positions.append(
+                    StatementPosition(
+                        quantity=_money(tags["qty"]),
+                        ticker=head[0],
+                        description=plain[:80],
+                    )
+                )
+        return positions
+
     def parse_batch(self, batch: Any, source: Any) -> Any:
         from django_assets.brokerage.models import ImportLine
 

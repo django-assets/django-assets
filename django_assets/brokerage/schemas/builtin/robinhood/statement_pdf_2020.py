@@ -136,6 +136,69 @@ class RobinhoodStatementPdf2020(ImportSchema):
             "Account Activity" in sample or "Portfolio Value" in sample
         )
 
+    def parse_positions(self, source: Any) -> "list[Any]":
+        """ADR-0036: closing holdings from "Securities Held in Account".
+        Rows are name-line + value-line pairs; short quantities carry a
+        trailing S; option positions name themselves with the standard
+        descriptor on the name line."""
+        from django_assets.brokerage.schemas.instruments import (
+            ROBINHOOD_OPTION_DESC,
+            parse_us_date,
+        )
+        from django_assets.brokerage.schemas.positions import (
+            StatementPosition,
+            option_canonical_code,
+        )
+
+        lines = _statement_lines(source)
+        positions: list[Any] = []
+        in_section = False
+        pending_name = ""
+        row_re = re.compile(
+            r"^(?P<sym>[A-Z0-9.]{1,9}) (?P<acct>Margin|Cash|Sweep) "
+            r"(?P<qty>[\d,]+(?:\.\d+)?)(?P<short>S?)(?: |$)"
+        )
+        for raw in lines:
+            line = MARKER.sub("", raw.strip())
+            if line.startswith("Securities Held in Account"):
+                in_section = True
+                pending_name = ""
+                continue
+            if line.startswith(("Total Securities", "Account Activity")):
+                in_section = False
+                continue
+            if not in_section or not line or line.startswith("Estimated Yield"):
+                continue
+            match = row_re.match(line)
+            if match:
+                quantity = Decimal(match["qty"].replace(",", ""))
+                if match["short"] == "S":
+                    quantity = -quantity
+                sym = match["sym"]
+                is_cusip = bool(re.fullmatch(r"[0-9A-Z]{9}", sym)) and any(
+                    ch.isdigit() for ch in sym
+                )
+                record = StatementPosition(
+                    quantity=quantity,
+                    ticker="" if is_cusip else sym,
+                    cusip=sym if is_cusip else "",
+                    description=pending_name[:80],
+                )
+                option = ROBINHOOD_OPTION_DESC.search(pending_name)
+                if option:
+                    record.option_code = option_canonical_code(
+                        option["underlying"],
+                        parse_us_date(option["expiry"]),
+                        Decimal(option["strike"]),
+                        "C" if option["right"] == "Call" else "P",
+                    )
+                    record.ticker = ""
+                positions.append(record)
+                pending_name = ""
+                continue
+            pending_name = line
+        return positions
+
     def parse_batch(self, batch: Any, source: Any) -> Any:
         from django_assets.brokerage.models import ImportLine
 

@@ -264,3 +264,64 @@ def guard_reconciliation_flag(
             f"cannot clear allows_reconciliation on {instance.account.name!r}: "
             f"ImportLine matches reference this account's legs; unmatch them first"
         )
+
+
+class CorporateActionProposal(models.Model):
+    """An unexplained position residual from a statement checkpoint,
+    classified and awaiting the user's call (ADR-0036).
+
+    Detection is the sensor; this row is the feature: rename/split/
+    merger/spinoff candidates surface here with their evidence and are
+    NEVER booked automatically — identity is temporal, so even an
+    obvious rename is the user's interpretive judgment (the ADR-0029
+    posture). Approval books the mapped template and links it back via
+    booked_transaction; rejection is fingerprint-stable so re-running
+    detection never re-raises a resolved proposal.
+    """
+
+    account = models.ForeignKey(
+        Account, on_delete=models.CASCADE, related_name="corporate_action_proposals"
+    )
+    statement_date = models.DateField(db_index=True)
+    source_reference = models.CharField(max_length=200, blank=True)
+    action_kind = models.CharField(max_length=20)
+    """rename | split | merger | spinoff | unexplained"""
+    from_instrument = models.ForeignKey(
+        "django_assets.Instrument",
+        null=True,
+        blank=True,
+        on_delete=models.RESTRICT,
+        related_name="+",
+    )
+    to_instrument = models.ForeignKey(
+        "django_assets.Instrument",
+        null=True,
+        blank=True,
+        on_delete=models.RESTRICT,
+        related_name="+",
+    )
+    from_quantity = models.DecimalField(max_digits=38, decimal_places=18, null=True, blank=True)
+    to_quantity = models.DecimalField(max_digits=38, decimal_places=18, null=True, blank=True)
+    evidence = models.JSONField(default=dict, blank=True)
+    fingerprint = models.CharField(max_length=64, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution = models.CharField(max_length=20, blank=True)
+    """"" (pending) | approved | rejected"""
+    note = models.TextField(blank=True)
+    booked_transaction = models.ForeignKey(
+        Transaction, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    objects: ClassVar[models.Manager["CorporateActionProposal"]] = models.Manager()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["account", "fingerprint"], name="uq_caproposal_account_fingerprint"
+            )
+        ]
+        ordering = ["statement_date", "pk"]
+
+    def __str__(self) -> str:
+        return f"{self.action_kind} @ {self.statement_date} ({self.resolution or 'pending'})"

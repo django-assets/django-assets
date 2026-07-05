@@ -58,6 +58,13 @@ class ImportSchema:
         pure-informational schemas may leave this unimplemented."""
         raise NotImplementedError
 
+    def parse_positions(self, source: Any) -> "list[Any]":
+        """ADR-0036: the document's closing holdings as StatementPosition
+        records, for corporate-action checkpoints. Additive — never
+        touches materialization. Default: this format publishes no
+        positions (e.g. transaction CSVs)."""
+        return []
+
     @classmethod
     def sniff(cls, sample: str) -> bool:
         """Format fingerprint for upload detection: does this text

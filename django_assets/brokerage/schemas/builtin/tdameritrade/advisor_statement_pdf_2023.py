@@ -130,6 +130,92 @@ class TdAmeritradeAdvisorStatementPdf2023(ImportSchema):
         """Advisor-managed statements name the Independent Advisor."""
         return "Independent Advisor" in sample and "TRANSACTIONS DETAIL" in sample
 
+    def parse_positions(self, source: Any) -> "list[Any]":
+        """ADR-0036: closing holdings from HOLDINGS DETAIL. Rows tail as
+        <SYM|-> <qty> <price|NA> <value|NA>; option identity rides the
+        continuation descriptor. Cash rows are excluded — the cash
+        acceptance covers them."""
+        from django_assets.brokerage.schemas.positions import (
+            StatementPosition,
+            option_canonical_code,
+        )
+
+        text = source if isinstance(source, str) else extract_text(source)
+        positions: list[Any] = []
+        in_section = False
+        current: Any = None
+        months = {
+            "Jan": 1,
+            "Feb": 2,
+            "Mar": 3,
+            "Apr": 4,
+            "May": 5,
+            "Jun": 6,
+            "Jul": 7,
+            "Aug": 8,
+            "Sep": 9,
+            "Oct": 10,
+            "Nov": 11,
+            "Dec": 12,
+        }
+
+        def finish() -> None:
+            nonlocal current
+            if current is None:
+                return
+            record, current = current, None
+            positions.append(record)
+
+        for raw in text.splitlines():
+            line = raw.strip()
+            if line.startswith("HOLDINGS DETAIL"):
+                in_section = True
+                continue
+            if line.startswith(("TOTAL HOLDINGS", "TRANSACTIONS DETAIL", "ACCOUNT SUMMARY")):
+                finish()
+                in_section = False
+                continue
+            if not in_section or not line or "CASH" in line.upper()[:24]:
+                continue
+            tokens = line.split()
+            tail: list[str] = []
+            while (
+                tokens
+                and len(tail) < 4
+                and (tokens[-1] in ("NA", "-") or NUMBER.fullmatch(tokens[-1]))
+            ):
+                tail.insert(0, tokens.pop())
+            symbol = ""
+            if len(tail) == 4:
+                slot, tail = tail[0], tail[1:]
+                symbol = "" if slot in ("-", "NA") else slot
+            elif len(tail) == 3 and tokens and SYMBOLISH.fullmatch(tokens[-1]):
+                symbol = tokens.pop()
+            quantities = [t for t in tail[:1] if t not in ("NA", "-")]
+            if quantities and not line.startswith(("Investment", "Symbol/", "Closing")):
+                finish()
+                current = StatementPosition(
+                    quantity=_qty(quantities[0]),
+                    ticker=symbol,
+                    description=" ".join(tokens),
+                )
+                continue
+            if current is not None and line:
+                opt = OPTION_DESC.match(line)
+                if opt:
+                    current.option_code = option_canonical_code(
+                        opt["underlying"],
+                        datetime.date(
+                            2000 + int(opt["year"]),
+                            months[opt["month"].capitalize()],
+                            int(opt["day"]),
+                        ),
+                        Decimal(opt["strike"]),
+                        opt["right"],
+                    )
+        finish()
+        return positions
+
     def parse_batch(self, batch: Any, source: Any) -> Any:
         from django_assets.brokerage.models import ImportLine
 

@@ -835,6 +835,180 @@ def detect_audit(root: Path) -> "list[dict]":
     return results
 
 
+CHECKPOINT_LANES = [
+    # (glob, username_fn, schema key, date_fn) — every statement file is a
+    # checkpoint, including ones whose transaction periods were skipped as
+    # CSV-covered (they audit CSV completeness — the ZVOL hole).
+    ("Schwab/Schwab", "schwab"),
+    ("TD Ameritrade/TD Ameritrade", "tdameritrade"),
+    ("Robinhood/Robinhood", "robinhood"),
+    ("InvestInVol", "investinvol"),
+    ("IEB", "homebroker"),
+    ("Tradier", "tradier"),
+    ("Ally 3LB68464", "ally"),
+]
+
+
+def checkpoint_audit(root: Path) -> "list[dict]":
+    """ADR-0036: diff every statement's closing holdings against the
+    ledger at that date; persist proposals for residuals. Reported,
+    never gating."""
+    from django.contrib.auth import get_user_model
+
+    from django_assets.brokerage.checkpoints import run_checkpoint
+    from django_assets.brokerage.models import CorporateActionProposal
+    from django_assets.brokerage.schemas import registry
+    from django_assets.core.models import Account
+
+    User = get_user_model()
+
+    def holdings_for(username):
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return None
+        return Account.objects.get(owner=user, name="brokerage_holdings")
+
+    jobs = []  # (schema, holdings account, path, as_of date, label)
+
+    schwab_schema = registry.get("schwab", "statement", "pdf", "2024.1")
+    base = root / "Schwab" / "Schwab"
+    if base.exists():
+        for folder in sorted(p for p in base.iterdir() if p.is_dir()):
+            slug = re.sub(r"[^a-z0-9]+", "-", f"schwab-{folder.name}".lower()).strip("-")
+            account = holdings_for(slug)
+            if account is None:
+                continue
+            for path in sorted(folder.iterdir()):
+                match = SCHWAB_STMT_DATE.search(path.name)
+                if (
+                    path.suffix.lower() != ".pdf"
+                    or not match
+                    or "1099" in path.name
+                    or "5498" in path.name
+                ):
+                    continue
+                as_of = datetime.date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+                jobs.append(
+                    (schwab_schema, account, path, as_of, f"{folder.name}/{path.name[:34]}")
+                )
+
+    tda_schema = registry.get("tdameritrade", "statement", "pdf", "2012.1")
+    for slug, files in tda_account_files(root).items():
+        account = holdings_for(f"td-ameritrade-{slug}")
+        if account is None:
+            continue
+        for path in files:
+            month = _tda_month(path.stem)
+            period = file_period(Path(month)) if month else None
+            if not period:
+                continue
+            jobs.append((tda_schema, account, path, period[1], f"TDA/{slug}/{month}"))
+
+    rh_schema = registry.get("robinhood", "statement", "pdf", "2020.1")
+    base = root / "Robinhood" / "Robinhood"
+    if base.exists():
+        for folder in sorted(p for p in base.iterdir() if p.is_dir()):
+            slug = re.sub(r"[^a-z0-9]+", "-", f"robinhood-{folder.name}".lower()).strip("-")
+            account = holdings_for(slug)
+            if account is None:
+                continue
+            for path in sorted(folder.rglob("*")):
+                if path.suffix.lower() != ".pdf" or "1099" in path.name:
+                    continue
+                match = re.match(r"^(\d{4})-(\d{2})$", path.stem)
+                if not match:
+                    continue
+                period = file_period(Path(path.stem))
+                jobs.append((rh_schema, account, path, period[1], f"RH/{folder.name}/{path.stem}"))
+
+    iiv_schema = registry.get("tdameritrade", "advisor-statement", "pdf", "2023.1")
+    base = root / "InvestInVol"
+    if base.exists():
+        account = holdings_for("investinvol-947365774")
+        if account is not None:
+            for path in sorted(base.glob("*.pdf")):
+                match = re.search(r"(\d{4})-(\d{2})", path.stem)
+                if not match:
+                    continue
+                period = file_period(Path(match.group(0)))
+                jobs.append((iiv_schema, account, path, period[1], f"IIV/{path.stem[-7:]}"))
+
+    ieb_schema = registry.get("homebroker", "resumen", "pdf", "2018.1")
+    base = root / "IEB"
+    if base.exists():
+        for path in sorted(base.glob("*.PDF")):
+            match = re.match(r"^(\d{4}) RESUMEN_(\d+)$", path.stem)
+            if not match:
+                continue
+            account = holdings_for(f"homebroker-{match.group(2)}")
+            if account is None:
+                continue
+            jobs.append(
+                (
+                    ieb_schema,
+                    account,
+                    path,
+                    datetime.date(int(match.group(1)), 12, 31),
+                    f"IEB/{match.group(2)}/{match.group(1)}",
+                )
+            )
+
+    apex_schema = registry.get("tradier", "statement", "pdf", "2022.1")
+    for files, username, label in (
+        (tradier_statement_files(root), "tradier-6ya22794", "Tradier"),
+        (
+            [p for p in sorted((root / "Ally 3LB68464").glob("*.pdf")) if "1099" not in p.name]
+            if (root / "Ally 3LB68464").exists()
+            else [],
+            "ally-3lb68464",
+            "Ally",
+        ),
+    ):
+        account = holdings_for(username)
+        if account is None:
+            continue
+        for path in files:
+            month = _statement_month(path)
+            period = file_period(Path(month)) if month else None
+            if not period:
+                continue
+            jobs.append((apex_schema, account, path, period[1], f"{label}/{month}"))
+
+    results = []
+    kinds: dict = {}
+    for schema, account, path, as_of, label in jobs:
+        try:
+            positions = schema.parse_positions(path.read_bytes())
+        except Exception as exc:  # noqa: BLE001 — audit must not break the run
+            results.append({"file": f"ckpt:{label}", "status": f"FAIL (parse: {exc})"[:90]})
+            continue
+        created = run_checkpoint(
+            account=account, positions=positions, as_of=as_of, source_reference=label
+        )
+        for proposal in created:
+            kinds[proposal.action_kind] = kinds.get(proposal.action_kind, 0) + 1
+
+    pending = CorporateActionProposal.objects.filter(resolution="")
+    print(
+        f"corporate-action checkpoints: {len(jobs)} statements audited, "
+        f"new proposals by kind: {kinds or 'none'}, pending total: {pending.count()}"
+    )
+    for proposal in pending.order_by("statement_date")[:12]:
+        frm = proposal.from_instrument.code if proposal.from_instrument else "?"
+        to = (
+            proposal.to_instrument.code
+            if proposal.to_instrument
+            else proposal.evidence.get("statement_label", "?")
+        )
+        print(
+            f"  [{proposal.action_kind:11s}] {proposal.statement_date} "
+            f"{proposal.account.owner.username[:28]:28s} {frm} → {to} "
+            f"({proposal.from_quantity} → {proposal.to_quantity})"
+        )
+    return results
+
+
 def reset() -> None:
     """Purge every artifact-runner user (cascades accounts, batches,
     transactions, lots — the whole graph) for a clean acceptance run."""
@@ -906,6 +1080,7 @@ def main() -> int:
 
     detect_results = detect_audit(root)
     all_results.extend(detect_results)
+    all_results.extend(checkpoint_audit(root))
     detect_ok = sum(1 for r in detect_results if r["status"] == "OK")
     print(f"format detection: {detect_ok}/{len(detect_results)} files recognized correctly")
 
