@@ -223,8 +223,10 @@ class SchwabTransactionsCsv2024(ImportSchema):
             if option is None:
                 raise ValueError(f"{action} on non-option symbol {symbol!r}")
             position = Holding.current(accounts["holdings"], option)
-            if position != 0:
-                contracts = abs(qty) if position > 0 else -abs(qty)
+            if position > 0:
+                contracts = abs(qty)
+            elif position < 0:
+                contracts = -abs(qty)
             else:
                 contracts = -qty  # row-sign fallback (see module docstring)
             return [
