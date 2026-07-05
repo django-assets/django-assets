@@ -110,9 +110,7 @@ def test_unlinked_exercise_strike_only_basis(accounts, usd, xyz, put):
     share_lot = Lot.objects.get(instrument=xyz)
     assert share_lot.cost_basis == D("1000.00")  # strike only
     assert share_lot.rollover_linked is False
-    option_gain = sum(
-        m.realized_gain for m in LotMatch.objects.filter(lot__instrument=put)
-    )
+    option_gain = sum(m.realized_gain for m in LotMatch.objects.filter(lot__instrument=put))
     assert option_gain == D("50.00")  # premium stands alone
 
 

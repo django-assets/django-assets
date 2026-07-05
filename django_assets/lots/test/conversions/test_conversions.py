@@ -99,9 +99,7 @@ def test_fx_rate_source_is_a_report_parameter(cedear_history, accounts, ars, usd
     from django_assets.lots.reports import realized_gains
 
     rebuild_lots(accounts["holdings"])
-    rows_before = list(
-        LotMatch.objects.order_by("id").values_list("proceeds", "basis_recovered")
-    )
+    rows_before = list(LotMatch.objects.order_by("id").values_list("proceeds", "basis_recovered"))
 
     class Rate:
         def __init__(self, rate):
@@ -116,7 +114,5 @@ def test_fx_rate_source_is_a_report_parameter(cedear_history, accounts, ars, usd
     gain_dear = sum(row["realized_gain"] for row in dear if row["instrument"] == "AAPL.US")
     assert gain_cheap != gain_dear
 
-    rows_after = list(
-        LotMatch.objects.order_by("id").values_list("proceeds", "basis_recovered")
-    )
+    rows_after = list(LotMatch.objects.order_by("id").values_list("proceeds", "basis_recovered"))
     assert rows_after == rows_before  # rates never touch storage
