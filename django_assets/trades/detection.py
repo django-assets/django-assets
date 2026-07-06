@@ -165,7 +165,12 @@ def _with_long_shares(share_qty: Decimal, contracts: "list[_Contract]") -> str:
     if short_calls and long_puts and not short_puts and covered:
         return "collar"
     if short_calls and short_puts and not long_puts and covered:
-        return "covered_strangle"
+        same_strike = (
+            len(short_calls) == 1
+            and len(short_puts) == 1
+            and (short_calls[0].strike == short_puts[0].strike)
+        )
+        return "covered_short_straddle" if same_strike else "covered_short_strangle"
     if short_calls and not long_puts and not short_puts and covered:
         return "covered_call"
     if long_puts and not short_calls and not short_puts:
@@ -179,7 +184,7 @@ def _with_short_shares(contracts: "list[_Contract]") -> str:
         if contract.right == "P" and not contract.is_long:
             return "covered_put"
         if contract.right == "C" and contract.is_long:
-            return "protective_call"
+            return "synthetic_put"  # short stock + long call
     return "mixed"
 
 
@@ -220,17 +225,32 @@ def _two_legs(a: "_Contract", b: "_Contract") -> str:
         return "bear_put_spread" if high.is_long else "bull_put_spread"
 
     if same_right and not same_expiry and opposite and equal_size:
-        return "calendar_spread" if same_strike else "diagonal_spread"
+        flavor = "call" if a.right == "C" else "put"
+        return f"calendar_{flavor}_spread" if same_strike else f"diagonal_{flavor}_spread"
 
-    if not same_right and same_expiry and not opposite and equal_size:
-        side = "long" if a.is_long else "short"
-        return f"{side}_straddle" if same_strike else f"{side}_strangle"
+    if not same_right and same_expiry and not opposite:
+        call = a if a.right == "C" else b
+        put = b if a.right == "C" else a
+        if equal_size:
+            side = "long" if a.is_long else "short"
+            if same_strike:
+                return f"{side}_straddle"
+            if call.strike > put.strike:
+                return f"{side}_strangle"
+            # in-the-money pair: call struck BELOW the put
+            return "guts" if side == "long" else "short_guts"
+        if same_strike and a.is_long and b.is_long:
+            # 1:2 same-strike volatility tilts
+            if abs(put.count) == 2 * abs(call.count):
+                return "strip"
+            if abs(call.count) == 2 * abs(put.count):
+                return "strap"
 
     if not same_right and same_expiry and opposite and equal_size:
         call = a if a.right == "C" else b
         if same_strike:
-            return "synthetic_long" if call.is_long else "synthetic_short"
-        return "risk_reversal"
+            return "long_synthetic_future" if call.is_long else "short_synthetic_future"
+        return "long_combo" if call.is_long else "short_combo"
 
     return "mixed"
 
@@ -247,11 +267,24 @@ def _three_legs(contracts: "list[_Contract]") -> str:
         ratio_ok = counts[1] == counts[0] + counts[2] and counts[0] == counts[2]
         wings_same = low.is_long == high.is_long
         body_opposite = mid.is_long != low.is_long
+        flavor = "call" if low.right == "C" else "put"
         if ratio_ok and wings_same and body_opposite:
             if (mid.strike - low.strike) != (high.strike - mid.strike):
-                return "broken_wing_butterfly"
+                prefix = "" if low.is_long else "inverse_"
+                return f"{prefix}{flavor}_broken_wing"
             side = "long" if low.is_long else "short"
-            return f"{side}_{'call' if low.right == 'C' else 'put'}_butterfly"
+            return f"{side}_{flavor}_butterfly"
+        # Ladders: three strikes, 1:1:1, a vertical plus one extra leg.
+        if counts[0] == counts[1] == counts[2]:
+            pattern = (low.is_long, mid.is_long, high.is_long)
+            ladder = {
+                ("C", (True, False, False)): "bull_call_ladder",
+                ("C", (False, True, True)): "bear_call_ladder",
+                ("P", (True, True, False)): "bull_put_ladder",
+                ("P", (False, False, True)): "bear_put_ladder",
+            }.get((low.right, pattern))
+            if ladder:
+                return ladder
 
     # Jade lizard: short put + short call vertical, one expiry, no
     # upside risk beyond the call spread.
@@ -267,6 +300,18 @@ def _three_legs(contracts: "list[_Contract]") -> str:
             and abs(calls[0].count) == abs(calls[1].count)
         ):
             return "jade_lizard"
+        # Reverse jade lizard: short call + bull put credit spread.
+        puts_sorted = sorted((c for c in contracts if c.right == "P"), key=lambda c: c.strike)
+        lone_calls = [c for c in contracts if c.right == "C"]
+        if (
+            len(lone_calls) == 1
+            and not lone_calls[0].is_long
+            and len(puts_sorted) == 2
+            and puts_sorted[0].is_long
+            and not puts_sorted[1].is_long
+            and abs(puts_sorted[0].count) == abs(puts_sorted[1].count)
+        ):
+            return "reverse_jade_lizard"
 
     return "mixed"
 

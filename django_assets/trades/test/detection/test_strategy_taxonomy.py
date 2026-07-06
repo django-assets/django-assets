@@ -87,22 +87,31 @@ CASES = [
     ("call_backspread", [], [(490, "C", EXP1, -1), (510, "C", EXP1, 2)]),
     ("put_backspread", [], [(410, "P", EXP1, -1), (390, "P", EXP1, 2)]),
     # time spreads
-    ("calendar_spread", [], [(500, "C", EXP1, -1), (500, "C", EXP2, 1)]),
-    ("diagonal_spread", [], [(500, "C", EXP1, -1), (520, "C", EXP2, 1)]),
+    ("calendar_call_spread", [], [(500, "C", EXP1, -1), (500, "C", EXP2, 1)]),
+    ("calendar_put_spread", [], [(400, "P", EXP1, -1), (400, "P", EXP2, 1)]),
+    ("diagonal_call_spread", [], [(500, "C", EXP1, -1), (520, "C", EXP2, 1)]),
+    ("diagonal_put_spread", [], [(400, "P", EXP1, -1), (380, "P", EXP2, 1)]),
     # volatility pairs
     ("long_straddle", [], [(450, "C", EXP1, 1), (450, "P", EXP1, 1)]),
     ("short_straddle", [], [(450, "C", EXP1, -1), (450, "P", EXP1, -1)]),
     ("long_strangle", [], [(470, "C", EXP1, 1), (430, "P", EXP1, 1)]),
     ("short_strangle", [], [(470, "C", EXP1, -1), (430, "P", EXP1, -1)]),
     # synthetics
-    ("synthetic_long", [], [(450, "C", EXP1, 1), (450, "P", EXP1, -1)]),
-    ("synthetic_short", [], [(450, "C", EXP1, -1), (450, "P", EXP1, 1)]),
-    ("risk_reversal", [], [(470, "C", EXP1, 1), (430, "P", EXP1, -1)]),
+    ("long_synthetic_future", [], [(450, "C", EXP1, 1), (450, "P", EXP1, -1)]),
+    ("short_synthetic_future", [], [(450, "C", EXP1, -1), (450, "P", EXP1, 1)]),
+    ("long_combo", [], [(470, "C", EXP1, 1), (430, "P", EXP1, -1)]),
+    ("short_combo", [], [(470, "C", EXP1, -1), (430, "P", EXP1, 1)]),
     # butterflies
     ("long_call_butterfly", [], [(480, "C", EXP1, 1), (500, "C", EXP1, -2), (520, "C", EXP1, 1)]),
     ("short_call_butterfly", [], [(480, "C", EXP1, -1), (500, "C", EXP1, 2), (520, "C", EXP1, -1)]),
     ("long_put_butterfly", [], [(380, "P", EXP1, 1), (400, "P", EXP1, -2), (420, "P", EXP1, 1)]),
-    ("broken_wing_butterfly", [], [(480, "C", EXP1, 1), (500, "C", EXP1, -2), (530, "C", EXP1, 1)]),
+    ("call_broken_wing", [], [(480, "C", EXP1, 1), (500, "C", EXP1, -2), (530, "C", EXP1, 1)]),
+    ("put_broken_wing", [], [(370, "P", EXP1, 1), (400, "P", EXP1, -2), (420, "P", EXP1, 1)]),
+    (
+        "inverse_call_broken_wing",
+        [],
+        [(480, "C", EXP1, -1), (500, "C", EXP1, 2), (530, "C", EXP1, -1)],
+    ),
     # three-leg credit
     ("jade_lizard", [], [(430, "P", EXP1, -1), (490, "C", EXP1, -1), (510, "C", EXP1, 1)]),
     # four-leg, one expiry
@@ -152,13 +161,26 @@ CASES = [
         [],
         [(430, "P", EXP1, -1), (420, "P", EXP2, 1), (470, "C", EXP1, -1), (480, "C", EXP2, 1)],
     ),
+    # in-the-money volatility pairs and same-strike tilts
+    ("guts", [], [(430, "C", EXP1, 1), (470, "P", EXP1, 1)]),
+    ("short_guts", [], [(430, "C", EXP1, -1), (470, "P", EXP1, -1)]),
+    ("strip", [], [(450, "C", EXP1, 1), (450, "P", EXP1, 2)]),
+    ("strap", [], [(450, "C", EXP1, 2), (450, "P", EXP1, 1)]),
+    # ladders (1:1:1 across three strikes)
+    ("bull_call_ladder", [], [(470, "C", EXP1, 1), (490, "C", EXP1, -1), (510, "C", EXP1, -1)]),
+    ("bear_call_ladder", [], [(470, "C", EXP1, -1), (490, "C", EXP1, 1), (510, "C", EXP1, 1)]),
+    ("bull_put_ladder", [], [(390, "P", EXP1, 1), (410, "P", EXP1, 1), (430, "P", EXP1, -1)]),
+    ("bear_put_ladder", [], [(390, "P", EXP1, -1), (410, "P", EXP1, -1), (430, "P", EXP1, 1)]),
+    # credit structures
+    ("reverse_jade_lizard", [], [(410, "P", EXP1, 1), (430, "P", EXP1, -1), (490, "C", EXP1, -1)]),
     # stock + options
     ("covered_call", [100], [(510, "C", EXP1, -1)]),
     ("protective_put", [100], [(430, "P", EXP1, 1)]),
     ("collar", [100], [(510, "C", EXP1, -1), (430, "P", EXP1, 1)]),
-    ("covered_strangle", [100], [(510, "C", EXP1, -1), (430, "P", EXP1, -1)]),
+    ("covered_short_strangle", [100], [(510, "C", EXP1, -1), (430, "P", EXP1, -1)]),
+    ("covered_short_straddle", [100], [(470, "C", EXP1, -1), (470, "P", EXP1, -1)]),
     ("covered_put", [-100], [(430, "P", EXP1, -1)]),
-    ("protective_call", [-100], [(510, "C", EXP1, 1)]),
+    ("synthetic_put", [-100], [(510, "C", EXP1, 1)]),
     ("stock", [100], []),
     # honest fallbacks
     ("mixed", [100], [(510, "C", EXP1, -2)]),  # under-covered short calls
