@@ -193,7 +193,7 @@ def _options_only(contracts: "list[_Contract]") -> str:
         contract = contracts[0]
         side = "long" if contract.is_long else "short"
         if side == "short" and contract.right == "P":
-            return "cash_secured_put"
+            return "short_put"
         return f"{side}_{'call' if contract.right == 'C' else 'put'}"
     if len(contracts) == 2:
         return _two_legs(*contracts)
