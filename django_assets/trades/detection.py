@@ -103,64 +103,234 @@ def _open_trades_holding(user: Any, instrument: Instrument) -> "list[tuple[Trade
 
 
 def classify_structure(legs: "list[TransactionLeg]") -> str:
-    """Structural taxonomy (ADR-0037 §3): what do these fills form?"""
+    """Full options-strategy taxonomy (ADR-0037 §3 as extended for the
+    options-focused platform). Purely structural: rights, expiries,
+    strikes, NET contract counts per instrument, share coverage. Every
+    label is explainable in one evidence sentence; anything that
+    doesn't match a canonical shape is `mixed` — never a dressed-up
+    guess."""
     metas = OptionMeta.objects.filter(
         instrument_id__in=[leg.instrument_id for leg in legs]
     ).in_bulk(field_name="instrument_id")
-    options = [leg for leg in legs if leg.instrument_id in metas]
-    shares = [leg for leg in legs if leg.instrument_id not in metas]
-    share_qty = sum((leg.amount for leg in shares), Decimal(0))
 
-    if not options:
+    # Net per instrument: multiple fills of one contract are one
+    # position; a cluster netting a contract to zero drops it.
+    net: dict[int, Decimal] = defaultdict(Decimal)
+    for leg in legs:
+        net[leg.instrument_id] += leg.amount
+    share_qty = sum((qty for iid, qty in net.items() if iid not in metas), Decimal(0))
+    contracts = [
+        _Contract(
+            right=metas[iid].right,
+            expiry=metas[iid].expiry,
+            strike=Decimal(metas[iid].strike),
+            count=qty,
+        )
+        for iid, qty in net.items()
+        if iid in metas and qty != 0
+    ]
+    contracts.sort(key=lambda c: (c.expiry, c.strike, c.right))
+
+    if not contracts:
         return "stock"
+    if share_qty > 0:
+        return _with_long_shares(share_qty, contracts)
+    if share_qty < 0:
+        return _with_short_shares(contracts)
+    return _options_only(contracts)
 
-    def sig(leg: TransactionLeg) -> "tuple[str, Any, Decimal, Decimal]":
-        meta = metas[leg.instrument_id]
-        return (meta.right, meta.expiry, Decimal(meta.strike), leg.amount)
 
-    signatures = [sig(leg) for leg in options]
-    contracts = sum((abs(leg.amount) for leg in options), Decimal(0))
+class _Contract:
+    __slots__ = ("right", "expiry", "strike", "count")
 
-    if not shares and len(options) == 1:
-        right, _, _, amount = signatures[0]
-        side = "long" if amount > 0 else "short"
-        if side == "short" and right == "P":
-            return "cash_secured_put"
-        return f"{side}_{'call' if right == 'C' else 'put'}"
+    def __init__(self, right: str, expiry: Any, strike: Decimal, count: Decimal) -> None:
+        self.right = right
+        self.expiry = expiry
+        self.strike = strike
+        self.count = count
 
-    if shares and share_qty > 0:
-        short_calls = [s for s in signatures if s[0] == "C" and s[3] < 0]
-        long_puts = [s for s in signatures if s[0] == "P" and s[3] > 0]
-        covered = sum((abs(s[3]) for s in short_calls), Decimal(0)) * 100 <= share_qty
-        if short_calls and long_puts and covered:
-            return "collar"
-        if short_calls and not long_puts and covered and len(options) == len(short_calls):
-            return "covered_call"
-        if long_puts and not short_calls and len(options) == len(long_puts):
-            return "protective_put"
+    @property
+    def is_long(self) -> bool:
+        return self.count > 0
+
+
+def _with_long_shares(share_qty: Decimal, contracts: "list[_Contract]") -> str:
+    short_calls = [c for c in contracts if c.right == "C" and not c.is_long]
+    long_puts = [c for c in contracts if c.right == "P" and c.is_long]
+    short_puts = [c for c in contracts if c.right == "P" and not c.is_long]
+    others = [c for c in contracts if c not in short_calls + long_puts + short_puts]
+    covered = sum((abs(c.count) for c in short_calls), Decimal(0)) * 100 <= share_qty
+    if others:
         return "mixed"
+    if short_calls and long_puts and not short_puts and covered:
+        return "collar"
+    if short_calls and short_puts and not long_puts and covered:
+        return "covered_strangle"
+    if short_calls and not long_puts and not short_puts and covered:
+        return "covered_call"
+    if long_puts and not short_calls and not short_puts:
+        return "protective_put"
+    return "mixed"
 
-    if not shares and len(options) == 2:
-        (r1, e1, k1, a1), (r2, e2, k2, a2) = signatures
-        if r1 == r2 and e1 == e2 and k1 != k2 and (a1 > 0) != (a2 > 0):
-            return "vertical_spread"
-        if r1 != r2 and e1 == e2 and (a1 > 0) == (a2 > 0):
-            return "straddle" if k1 == k2 else "strangle"
-        if r1 == r2 and e1 != e2 and (a1 > 0) != (a2 > 0):
-            return "calendar_spread"
 
-    if not shares and len(options) == 4 and contracts:
-        calls = sorted(s for s in signatures if s[0] == "C")
-        puts = sorted(s for s in signatures if s[0] == "P")
-        expiries = {s[1] for s in signatures}
+def _with_short_shares(contracts: "list[_Contract]") -> str:
+    if len(contracts) == 1:
+        contract = contracts[0]
+        if contract.right == "P" and not contract.is_long:
+            return "covered_put"
+        if contract.right == "C" and contract.is_long:
+            return "protective_call"
+    return "mixed"
+
+
+def _options_only(contracts: "list[_Contract]") -> str:
+    if len(contracts) == 1:
+        contract = contracts[0]
+        side = "long" if contract.is_long else "short"
+        if side == "short" and contract.right == "P":
+            return "cash_secured_put"
+        return f"{side}_{'call' if contract.right == 'C' else 'put'}"
+    if len(contracts) == 2:
+        return _two_legs(*contracts)
+    if len(contracts) == 3:
+        return _three_legs(contracts)
+    if len(contracts) == 4:
+        return _four_legs(contracts)
+    return "mixed"
+
+
+def _two_legs(a: "_Contract", b: "_Contract") -> str:
+    same_right = a.right == b.right
+    same_expiry = a.expiry == b.expiry
+    same_strike = a.strike == b.strike
+    opposite = a.is_long != b.is_long
+    equal_size = abs(a.count) == abs(b.count)
+
+    if same_right and same_expiry and not same_strike and opposite:
+        low, high = (a, b) if a.strike < b.strike else (b, a)
+        if not equal_size:
+            shorter = a if abs(a.count) < abs(b.count) else b
+            return (
+                f"{'call' if a.right == 'C' else 'put'}_backspread"
+                if not shorter.is_long
+                else f"ratio_{'call' if a.right == 'C' else 'put'}_spread"
+            )
+        if a.right == "C":
+            return "bull_call_spread" if low.is_long else "bear_call_spread"
+        return "bear_put_spread" if high.is_long else "bull_put_spread"
+
+    if same_right and not same_expiry and opposite and equal_size:
+        return "calendar_spread" if same_strike else "diagonal_spread"
+
+    if not same_right and same_expiry and not opposite and equal_size:
+        side = "long" if a.is_long else "short"
+        return f"{side}_straddle" if same_strike else f"{side}_strangle"
+
+    if not same_right and same_expiry and opposite and equal_size:
+        call = a if a.right == "C" else b
+        if same_strike:
+            return "synthetic_long" if call.is_long else "synthetic_short"
+        return "risk_reversal"
+
+    return "mixed"
+
+
+def _three_legs(contracts: "list[_Contract]") -> str:
+    rights = {c.right for c in contracts}
+    expiries = {c.expiry for c in contracts}
+
+    # Butterfly family: one right, one expiry, three strikes, 1:2:1,
+    # body opposite the wings.
+    if len(rights) == 1 and len(expiries) == 1 and len({c.strike for c in contracts}) == 3:
+        low, mid, high = sorted(contracts, key=lambda c: c.strike)
+        counts = [abs(low.count), abs(mid.count), abs(high.count)]
+        ratio_ok = counts[1] == counts[0] + counts[2] and counts[0] == counts[2]
+        wings_same = low.is_long == high.is_long
+        body_opposite = mid.is_long != low.is_long
+        if ratio_ok and wings_same and body_opposite:
+            if (mid.strike - low.strike) != (high.strike - mid.strike):
+                return "broken_wing_butterfly"
+            side = "long" if low.is_long else "short"
+            return f"{side}_{'call' if low.right == 'C' else 'put'}_butterfly"
+
+    # Jade lizard: short put + short call vertical, one expiry, no
+    # upside risk beyond the call spread.
+    if rights == {"C", "P"} and len(expiries) == 1:
+        puts = [c for c in contracts if c.right == "P"]
+        calls = sorted((c for c in contracts if c.right == "C"), key=lambda c: c.strike)
         if (
-            len(calls) == 2
-            and len(puts) == 2
-            and len(expiries) == 1
-            and (calls[0][3] > 0) != (calls[1][3] > 0)
-            and (puts[0][3] > 0) != (puts[1][3] > 0)
+            len(puts) == 1
+            and not puts[0].is_long
+            and len(calls) == 2
+            and not calls[0].is_long
+            and calls[1].is_long
+            and abs(calls[0].count) == abs(calls[1].count)
         ):
-            return "iron_condor"
+            return "jade_lizard"
+
+    return "mixed"
+
+
+def _four_legs(contracts: "list[_Contract]") -> str:
+    rights = {c.right for c in contracts}
+    expiries = sorted({c.expiry for c in contracts})
+    calls = sorted((c for c in contracts if c.right == "C"), key=lambda c: c.strike)
+    puts = sorted((c for c in contracts if c.right == "P"), key=lambda c: c.strike)
+    equal_size = len({abs(c.count) for c in contracts}) == 1
+
+    if rights == {"C", "P"} and len(calls) == 2 and len(puts) == 2 and equal_size:
+        if len(expiries) == 1:
+            call_pair = calls[0].is_long != calls[1].is_long
+            put_pair = puts[0].is_long != puts[1].is_long
+            if call_pair and put_pair:
+                # Box: synthetic long at one strike + synthetic short at
+                # another (call and put AGREEING per strike-pair).
+                if (
+                    {calls[0].strike, calls[1].strike} == {puts[0].strike, puts[1].strike}
+                    and calls[0].is_long != puts[0].is_long
+                    and calls[1].is_long != puts[1].is_long
+                ):
+                    return "box_spread"
+                body_short = not calls[0].is_long and not puts[1].is_long
+                body_long = calls[0].is_long and puts[1].is_long
+                iron = "iron_butterfly" if calls[0].strike == puts[1].strike else "iron_condor"
+                if body_short:
+                    return iron
+                if body_long:
+                    return f"reverse_{iron}"
+        elif len(expiries) == 2:
+            near = [c for c in contracts if c.expiry == expiries[0]]
+            far = [c for c in contracts if c.expiry == expiries[1]]
+            all_calls = [c for c in contracts if c.right == "C"]
+            all_puts = [c for c in contracts if c.right == "P"]
+            if (
+                len(near) == 2
+                and len(far) == 2
+                and {c.right for c in near} == {"C", "P"}
+                and {c.right for c in far} == {"C", "P"}
+                and all(
+                    c.is_long != n.is_long
+                    for c, n in zip(
+                        sorted(far, key=lambda x: x.right),
+                        sorted(near, key=lambda x: x.right),
+                        strict=True,
+                    )
+                )
+            ):
+                same_strikes = (
+                    all_calls[0].strike == all_calls[1].strike
+                    and all_puts[0].strike == all_puts[1].strike
+                )
+                return "double_calendar" if same_strikes else "double_diagonal"
+
+    if len(rights) == 1 and len(expiries) == 1 and equal_size:
+        ordered = sorted(contracts, key=lambda c: c.strike)
+        strikes = [c.strike for c in ordered]
+        if len(set(strikes)) == 4:
+            pattern = [c.is_long for c in ordered]
+            if pattern in ([True, False, False, True], [False, True, True, False]):
+                side = "long" if pattern[0] else "short"
+                return f"{side}_{'call' if ordered[0].right == 'C' else 'put'}_condor"
 
     return "mixed"
 
