@@ -75,7 +75,7 @@ CASES = [
     ("long_call", [], [(500, "C", EXP1, 1)]),
     ("long_put", [], [(400, "P", EXP1, 1)]),
     ("short_call", [], [(500, "C", EXP1, -1)]),
-    ("cash_secured_put", [], [(400, "P", EXP1, -1)]),
+    ("short_put", [], [(400, "P", EXP1, -1)]),
     # verticals, directional
     ("bull_call_spread", [], [(490, "C", EXP1, 1), (510, "C", EXP1, -1)]),
     ("bear_call_spread", [], [(490, "C", EXP1, -1), (510, "C", EXP1, 1)]),

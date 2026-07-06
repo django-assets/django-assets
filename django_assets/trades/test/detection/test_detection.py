@@ -200,7 +200,7 @@ def test_structure_classifier_shapes(accounts, usd, user):
     assert classify_structure([condor[0]]) == "long_put"
 
     csp = legs_for((put_hi, -1))
-    assert classify_structure(csp[-1:]) == "cash_secured_put"
+    assert classify_structure(csp[-1:]) == "short_put"
 
 
 def test_modify_and_reject(accounts, usd, user):
