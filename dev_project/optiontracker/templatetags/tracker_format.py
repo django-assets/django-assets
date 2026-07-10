@@ -38,6 +38,10 @@ STRATEGY_LABELS = {
 
 RIGHT_LABELS = {"C": "Call", "P": "Put"}
 
+#: Wheel-campaign option right -> reference Type label: inside a wheel a put is
+#: a cash-secured put and a call is a covered call (pure label mapping).
+WHEEL_TYPE_LABELS = {"C": "Covered Call", "P": "Cash Secured Put"}
+
 #: Leg side -> reference transaction ACTION label (pure label mapping):
 #: a short leg was sold to open, a long leg was bought.
 ACTION_LABELS = {"short": "Sell", "long": "Buy"}
@@ -223,6 +227,13 @@ def right_label(right: str | None) -> str:
     if right is None:
         return EM_DASH
     return RIGHT_LABELS.get(right, right)
+
+
+@register.filter
+def wheel_type_label(right: str | None) -> str:
+    if right is None:
+        return EM_DASH
+    return WHEEL_TYPE_LABELS.get(right, right)
 
 
 @register.filter

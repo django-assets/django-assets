@@ -268,6 +268,8 @@ a:hover { color: var(--text); }
 
 .sidenav-item svg { color: var(--muted); flex: none; }
 .sidenav-item .chev { margin-left: auto; }
+/* reference: collapsed group chevrons point right, expanded point down */
+.sidenav-group:not(.open) .chev { transform: rotate(-90deg); }
 
 .sidenav-item:hover { background: var(--card-2); }
 
@@ -581,10 +583,9 @@ tr.open .row-chev { transform: rotate(90deg); }
 .detail-row > td { background: var(--card-2); padding: 0 14px 16px 40px; }
 
 .detail-panel {
-  border-left: 2px solid var(--accent);
   padding: 14px 16px;
   background: var(--card-2);
-  border-radius: 0 10px 10px 0;
+  border-radius: 10px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -606,10 +607,16 @@ tr.open .row-chev { transform: rotate(90deg); }
   white-space: nowrap;
 }
 
-.legs-table th.num, .legs-table td.num { text-align: right; }
+/* reference detail panels left-align every leg column, including numerics */
+.legs-table th.num, .legs-table td.num { text-align: left; }
 
-/* roll-history sub-table keeps the uppercase header style */
+/* roll sub-tables (roll history, roll finder, month detail) keep the
+   uppercase header style and right-aligned numerics */
 .roll-table th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.roll-table th.num, .roll-table td.num { text-align: right; }
+
+/* history expanded per-leg table: uppercase headers like the reference */
+.legs-upper th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
 
 .legs-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-soft); white-space: nowrap; }
 .legs-table tbody tr:last-child td { border-bottom: none; }
@@ -1393,9 +1400,11 @@ dialog.app-dialog.tour-open {
 
 /* ---- broker ---- */
 
+/* reference: plain wrapping row of logo tiles — no card borders/boxes */
 .broker-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 22px;
   margin-top: 24px;
 }
@@ -1405,10 +1414,8 @@ dialog.app-dialog.tour-open {
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 22px 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: 14px;
-  background: var(--card-2);
+  width: 140px;
+  padding: 8px;
   text-align: center;
 }
 
@@ -1418,10 +1425,10 @@ dialog.app-dialog.tour-open {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 64px;
+  width: 88px;
+  height: 88px;
   border-radius: 14px;
-  font-size: 20px;
+  font-size: 26px;
   font-weight: 800;
   color: #fff;
 }
@@ -1435,7 +1442,7 @@ dialog.app-dialog.tour-open {
 .broker-logo-7 { background: #d81222; }
 .broker-logo-8 { background: #ff9500; }
 
-.broker-name { font-weight: 600; font-size: 13.5px; }
+.broker-name { font-weight: 500; font-size: 14px; }
 .broker-soon { color: var(--muted); font-size: 12px; }
 
 /* ---- footer ---- */
@@ -1501,22 +1508,6 @@ dialog.app-dialog.tour-open {
 
 .wheel-detail-head { align-items: center; }
 .wheel-detail-head .customize-btn { margin-bottom: 0; }
-
-.status-badge {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  background: var(--card-3);
-  color: var(--muted);
-  border: 1px solid var(--border);
-}
-.status-badge.status-assigned { color: var(--accent); border-color: var(--accent); }
-.status-badge.status-expired { color: var(--muted); }
-.status-badge.status-closed { color: var(--green); border-color: var(--green); }
 
 /* ---- calendar month view (Jan–Dec aggregate cards) ---- */
 
@@ -1611,12 +1602,15 @@ dialog.app-dialog.tour-open {
 #wheel-table .sym-text { flex-direction: row; gap: 4px; align-items: baseline; }
 #wheel-table .sym-price { font-size: 14px; color: var(--text); }
 
-/* Sorted-column tint (reference): whole column warm-amber. */
-.positions-table[data-sort-col="1"] thead th:nth-child(1), .positions-table[data-sort-col="1"] tbody tr.pos-row td:nth-child(1) { background: rgba(245, 158, 11, 0.09); }
-.positions-table[data-sort-col="3"] thead th:nth-child(3), .positions-table[data-sort-col="3"] tbody tr.pos-row td:nth-child(3) { background: rgba(245, 158, 11, 0.09); }
-.positions-table[data-sort-col="4"] thead th:nth-child(4), .positions-table[data-sort-col="4"] tbody tr.pos-row td:nth-child(4) { background: rgba(245, 158, 11, 0.09); }
-.positions-table[data-sort-col="5"] thead th:nth-child(5), .positions-table[data-sort-col="5"] tbody tr.pos-row td:nth-child(5) { background: rgba(245, 158, 11, 0.09); }
-.positions-table[data-sort-col="6"] thead th:nth-child(6), .positions-table[data-sort-col="6"] tbody tr.pos-row td:nth-child(6) { background: rgba(245, 158, 11, 0.09); }
-.positions-table[data-sort-col="7"] thead th:nth-child(7), .positions-table[data-sort-col="7"] tbody tr.pos-row td:nth-child(7) { background: rgba(245, 158, 11, 0.09); }
+/* Sorted-column tint (reference): whole column warm-amber for the numeric
+   columns; the Symbol column tints its HEADER cell only. Direct-child
+   combinators keep the tint out of the nested legs/roll sub-tables that
+   live inside expanded detail rows. */
+.positions-table[data-sort-col="1"] > thead > tr > th:nth-child(1) { background: rgba(245, 158, 11, 0.09); }
+.positions-table[data-sort-col="3"] > thead > tr > th:nth-child(3), .positions-table[data-sort-col="3"] > tbody > tr.pos-row > td:nth-child(3) { background: rgba(245, 158, 11, 0.09); }
+.positions-table[data-sort-col="4"] > thead > tr > th:nth-child(4), .positions-table[data-sort-col="4"] > tbody > tr.pos-row > td:nth-child(4) { background: rgba(245, 158, 11, 0.09); }
+.positions-table[data-sort-col="5"] > thead > tr > th:nth-child(5), .positions-table[data-sort-col="5"] > tbody > tr.pos-row > td:nth-child(5) { background: rgba(245, 158, 11, 0.09); }
+.positions-table[data-sort-col="6"] > thead > tr > th:nth-child(6), .positions-table[data-sort-col="6"] > tbody > tr.pos-row > td:nth-child(6) { background: rgba(245, 158, 11, 0.09); }
+.positions-table[data-sort-col="7"] > thead > tr > th:nth-child(7), .positions-table[data-sort-col="7"] > tbody > tr.pos-row > td:nth-child(7) { background: rgba(245, 158, 11, 0.09); }
 
 .sidenav-subitem svg { width: 14px; height: 14px; color: var(--muted); flex: none; margin-right: 2px; vertical-align: -2px; }

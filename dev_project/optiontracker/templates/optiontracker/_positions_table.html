@@ -146,7 +146,7 @@
               <span><span class="muted">Premium Incl. Roll:</span> {{ row.premium_incl_rolls|money }}</span>
               {% endif %}
               {% if row.aroi_initial is not None or row.aroi_now is not None %}
-              <span><span class="muted">AROI (init/now):</span> {{ row.aroi_initial|pct0 }}/{{ row.aroi_now|pct0 }}</span>
+              <span><span class="muted">AROI (init/now):</span> {{ row.aroi_initial|pct0 }}/{{ row.aroi_now|pct0 }} <span class="info-dot">i<span class="tooltip">Annualized return on the position's margin: opening premium at entry / current P&amp;L, annualized.</span></span></span>
               {% endif %}
             </div>
             <div class="detail-actions">
@@ -157,6 +157,7 @@
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/></svg>
                 {% if row.rolls %}Modify Roll{% else %}Roll Selection{% endif %}
               </button>
+              <span class="info-dot">i<span class="tooltip">Roll this position: close the current legs and reopen at a different strike or expiration.</span></span>
             </div>
             <dialog class="app-dialog roll-finder-dialog" id="roll-dialog-{{ row.trade.pk }}"
                     data-roll-url="{% url 'optiontracker:roll-finder' row.trade.pk %}">

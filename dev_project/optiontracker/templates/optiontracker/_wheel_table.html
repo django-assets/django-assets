@@ -39,11 +39,12 @@
         <td colspan="6">
           <div class="detail-panel">
             <div class="detail-meta wheel-detail-head">
-              <span><span class="muted">Total Premium:</span> <strong>{{ campaign.total_premium|money }}</strong></span>
+              <span><span class="muted">Total Premium:</span> <strong>{{ campaign.total_premium|money }}</strong> <span class="info-dot">i<span class="tooltip">Total option premium collected across this campaign's option trades.</span></span></span>
               <button type="button" class="btn btn-primary customize-btn" data-dialog="customize-dialog-{{ campaign.trade.pk }}">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
                 Customize
               </button>
+              <span class="info-dot">i<span class="tooltip">Choose which option trades count toward this campaign's adjusted cost.</span></span>
             </div>
             <dialog class="app-dialog" id="customize-dialog-{{ campaign.trade.pk }}">
               <div class="dialog-head">
@@ -56,18 +57,18 @@
             {% if campaign.history %}
             <table class="legs-table">
               <thead>
-                <tr><th>Type</th><th class="num">Purchase Price</th><th>Contracts</th><th>Open Date</th><th>Close Date</th><th class="num">Amount/Initial Premium</th><th class="num">Realized PnL</th></tr>
+                <tr><th>Type</th><th>Strike/Purchase Price</th><th>Contracts/Shares</th><th>Open Date</th><th>Close Date</th><th>Initial Premium/Amount</th><th>Realized PnL</th></tr>
               </thead>
               <tbody>
                 {% for item in campaign.history %}
                 <tr>
-                  <td>{{ item.right|right_label }} {{ item.strike|strike }}</td>
-                  <td class="num">{{ item.strike|strike }}</td>
-                  <td>{{ item.contracts|floatformat:"0" }}{% if item.status != 'open' %} <span class="status-badge status-{{ item.status }}">{{ item.status|upper }}</span>{% endif %}</td>
+                  <td>{{ item.right|wheel_type_label }}</td>
+                  <td>{{ item.strike|strike }}</td>
+                  <td>{{ item.contracts|floatformat:"0" }}{% if item.status == 'expired' or item.status == 'assigned' %} {{ item.status|upper }}{% endif %}</td>
                   <td>{{ item.opened_on|date:"Y-m-d" }}</td>
                   <td>{% if item.closed_on %}{{ item.closed_on|date:"Y-m-d" }}{% else %}&mdash;{% endif %}</td>
-                  <td class="num">{{ item.initial_premium|money }}</td>
-                  <td class="num {{ item.realized_pnl|sign_class }}">{% if item.realized_pnl is None %}&mdash;{% else %}{{ item.realized_pnl|money }}{% endif %}</td>
+                  <td>{{ item.initial_premium|money }}</td>
+                  <td class="{{ item.realized_pnl|sign_class }}">{% if item.realized_pnl is None %}&mdash;{% else %}{{ item.realized_pnl|money }}{% endif %}</td>
                 </tr>
                 {% endfor %}
               </tbody>
