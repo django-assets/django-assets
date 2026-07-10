@@ -676,7 +676,10 @@ def _split_position_and_mirror(
     first, second = asset_legs[0], asset_legs[1]
     cash_by_account: dict[int, Decimal] = {}
     for leg in all_legs:
-        if leg.instrument_id != first.instrument_id:
+        # Role is judged by CASH coherence only: sibling asset legs of a
+        # multi-leg combo (spread fills) are positions, not consideration,
+        # and must not flip a pair's user side to the counterparty.
+        if leg.instrument.price_currency_id is None:
             cash_by_account[leg.account_id] = (
                 cash_by_account.get(leg.account_id, Decimal(0)) + leg.amount
             )
