@@ -1598,3 +1598,10 @@ dialog.app-dialog.tour-open {
 .stat-label-green { color: rgb(34, 197, 94); }
 .stat-label-amber { color: rgb(245, 158, 11); }
 .summary-return.tip-host { cursor: help; }
+
+.stat-label-blue { color: rgb(132, 152, 255); }
+:root[data-theme="light"] .stat-label-blue { color: rgb(85, 112, 241); }
+.stat-icon-blue { color: rgb(132, 152, 255); background: rgba(132,152,255,0.12); }
+:root[data-theme="light"] .stat-icon-blue { color: rgb(85, 112, 241); }
+.flow-put { fill: #1f9d55; }
+.flow-call { fill: #f59e0b; }

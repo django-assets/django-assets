@@ -451,7 +451,7 @@ def pnl_flow_chart(summary) -> dict:
         symbol_node = columns[0][row.underlying.code]
         right_node = columns[1][row.right]
         outcome_node = columns[2][row.outcome]
-        css = "flow-gain" if row.outcome == "gain" else "flow-loss"
+        right_css = {"P": "flow-put", "C": "flow-call"}.get(row.right, "flow-mid")
         ribbons.append(
             {
                 "d": ribbon(symbol_node, right_node, weight, col_x[0] + node_w, col_x[1]),
@@ -461,7 +461,7 @@ def pnl_flow_chart(summary) -> dict:
         ribbons.append(
             {
                 "d": ribbon(right_node, outcome_node, weight, col_x[1] + node_w, col_x[2]),
-                "css": css,
+                "css": right_css,  # source-tinted: Put green, Call orange
             }
         )
 
@@ -484,13 +484,17 @@ def pnl_flow_chart(summary) -> dict:
                     "label_y": min(max(node["y"] + node["h"] / 2 - 3, 14.0), height - 20.0),
                     "anchor": anchor,
                     "css": css,
+                    "key": node["key"],
                 }
             )
         return out
 
     nodes = (
         node_list(columns[0], col_x[0], None, "flow-node-symbol", "end")
-        + node_list(columns[1], col_x[1], right_labels, "flow-node-right", "start")
+        + [
+            {**node, "css": {"P": "flow-put", "C": "flow-call"}.get(node["key"], "flow-node-right")}
+            for node in node_list(columns[1], col_x[1], right_labels, "flow-node-right", "start")
+        ]
         + node_list(columns[2], col_x[2], outcome_labels, "flow-node-outcome", "start")
     )
     return {"width": width, "height": height, "empty": False, "nodes": nodes, "ribbons": ribbons}
