@@ -27,8 +27,14 @@ dependencies = [
 drf = ["djangorestframework>=3.14,<4.0"]
 pdf = ["pdfplumber>=0.11"]
 
+[tool.uv.workspace]
+members = ["connectors/*"]
+
 [dependency-groups]
 dev = [
+    # The MarketData connector (sibling package; core never imports it) is a
+    # workspace member so the repo suite exercises it against the same library.
+    "django-assets-prices-marketdata",
     # Test
     "pytest==7.4.4",
     "pytest-django==4.8.0",
@@ -85,9 +91,12 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["django_assets"]
 
+[tool.uv.sources.django-assets-prices-marketdata]
+workspace = true
+
 [tool.mypy]
 python_version = "3.12"
-files = ["django_assets"]
+files = ["django_assets", "connectors/marketdata/src"]
 strict = true
 plugins = ["mypy_django_plugin.main"]
 

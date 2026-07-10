@@ -1,0 +1,48 @@
+{
+  "method": "GET",
+  "path": "/v1/stocks/quotes/SPY/",
+  "params": {},
+  "status": 203,
+  "ratelimit": {
+    "x-api-ratelimit-limit": "100000",
+    "x-api-ratelimit-remaining": "99998",
+    "x-api-ratelimit-reset": "1783690200",
+    "x-api-ratelimit-consumed": "1"
+  },
+  "body": {
+    "s": "ok",
+    "symbol": [
+      "SPY"
+    ],
+    "ask": [
+      "751.44"
+    ],
+    "askSize": [
+      480
+    ],
+    "bid": [
+      "751.4"
+    ],
+    "bidSize": [
+      40
+    ],
+    "mid": [
+      "751.42"
+    ],
+    "last": [
+      "751.71"
+    ],
+    "change": [
+      "6.31"
+    ],
+    "changepct": [
+      "0.0085"
+    ],
+    "volume": [
+      41840407
+    ],
+    "updated": [
+      1783641904
+    ]
+  }
+}

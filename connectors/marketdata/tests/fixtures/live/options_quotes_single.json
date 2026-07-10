@@ -1,0 +1,90 @@
+{
+  "method": "GET",
+  "path": "/v1/options/quotes/SPY260807C00752000/",
+  "params": {},
+  "status": 203,
+  "ratelimit": {
+    "x-api-ratelimit-limit": "100000",
+    "x-api-ratelimit-remaining": "99991",
+    "x-api-ratelimit-reset": "1783690200",
+    "x-api-ratelimit-consumed": "1"
+  },
+  "body": {
+    "s": "ok",
+    "optionSymbol": [
+      "SPY260807C00752000"
+    ],
+    "underlying": [
+      "SPY"
+    ],
+    "expiration": [
+      1786132800
+    ],
+    "side": [
+      "call"
+    ],
+    "strike": [
+      752
+    ],
+    "firstTraded": [
+      1782739800
+    ],
+    "dte": [
+      28
+    ],
+    "updated": [
+      1783628100
+    ],
+    "bid": [
+      "12.09"
+    ],
+    "bidSize": [
+      117
+    ],
+    "mid": [
+      "12.11"
+    ],
+    "ask": [
+      "12.13"
+    ],
+    "askSize": [
+      117
+    ],
+    "last": [
+      "12.17"
+    ],
+    "openInterest": [
+      1701
+    ],
+    "volume": [
+      591
+    ],
+    "inTheMoney": [
+      false
+    ],
+    "intrinsicValue": [
+      0
+    ],
+    "extrinsicValue": [
+      "12.11"
+    ],
+    "underlyingPrice": [
+      "751.59"
+    ],
+    "iv": [
+      "0.1363"
+    ],
+    "delta": [
+      "0.524"
+    ],
+    "gamma": [
+      "0.0138"
+    ],
+    "theta": [
+      "-0.226"
+    ],
+    "vega": [
+      "0.8428"
+    ]
+  }
+}

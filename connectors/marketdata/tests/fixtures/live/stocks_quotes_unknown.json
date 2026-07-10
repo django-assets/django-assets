@@ -1,0 +1,16 @@
+{
+  "method": "GET",
+  "path": "/v1/stocks/quotes/ZZZZZZZZ/",
+  "params": {},
+  "status": 400,
+  "ratelimit": {
+    "x-api-ratelimit-limit": "100000",
+    "x-api-ratelimit-remaining": "99992",
+    "x-api-ratelimit-reset": "1783690200",
+    "x-api-ratelimit-consumed": "0"
+  },
+  "body": {
+    "s": "error",
+    "errmsg": "Bad parameters, please check API documentation."
+  }
+}

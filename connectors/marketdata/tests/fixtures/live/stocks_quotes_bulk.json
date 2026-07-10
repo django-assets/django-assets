@@ -1,0 +1,61 @@
+{
+  "method": "GET",
+  "path": "/v1/stocks/quotes/",
+  "params": {
+    "symbols": "SPY,AAPL"
+  },
+  "status": 203,
+  "ratelimit": {
+    "x-api-ratelimit-limit": "100000",
+    "x-api-ratelimit-remaining": "99997",
+    "x-api-ratelimit-reset": "1783690200",
+    "x-api-ratelimit-consumed": "1"
+  },
+  "body": {
+    "s": "ok",
+    "symbol": [
+      "SPY",
+      "AAPL"
+    ],
+    "ask": [
+      "751.44",
+      "315.41"
+    ],
+    "askSize": [
+      480,
+      480
+    ],
+    "bid": [
+      "751.4",
+      "315.2"
+    ],
+    "bidSize": [
+      40,
+      400
+    ],
+    "mid": [
+      null,
+      null
+    ],
+    "last": [
+      "751.71",
+      "315.2801"
+    ],
+    "change": [
+      0,
+      "-0.9399"
+    ],
+    "changepct": [
+      0,
+      "-0.003"
+    ],
+    "volume": [
+      41840407,
+      48124501
+    ],
+    "updated": [
+      1783641661,
+      1783641661
+    ]
+  }
+}
