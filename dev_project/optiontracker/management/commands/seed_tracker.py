@@ -28,8 +28,8 @@ from django_assets_prices_marketdata.client import MarketDataClient, NoData
 from django_assets.core.builder import TransactionBuilder
 from django_assets.core.models import Account, Identifier, Instrument
 from django_assets.instruments.options.models import OptionMeta
-from django_assets.trades.detection import classify_structure
 from django_assets.trades.models import Trade
+from django_assets.trades.reports import classify_trade
 
 D = Decimal
 DEMO_USERNAME = "demo"
@@ -148,23 +148,7 @@ class Command(BaseCommand):
         trade = Trade.objects.create(user=self.user, name=name)
         for tx in transactions:
             trade.assign(tx, fraction=1)
-        # Live trades classify over ALL legs (closed cohorts net away, so
-        # the live structure remains — shares + short calls read as a
-        # covered call). Fully-closed trades net to nothing, so they
-        # classify over their OPENING transaction's structure instead.
-        allocations = list(
-            trade.allocations.filter(category="").select_related(
-                "leg__instrument", "leg__transaction"
-            )
-        )
-        legs = [allocation.leg for allocation in allocations]
-        if legs and trade.status == "closed":
-            by_tx: dict[Any, list[Any]] = {}
-            for allocation in allocations:
-                by_tx.setdefault(allocation.leg.transaction.timestamp, []).append(allocation.leg)
-            legs = by_tx[sorted(by_tx)[0]]
-        if legs:
-            trade.add_tag("strategy", classify_structure(legs))
+        trade.add_tag("strategy", classify_trade(trade))
         return trade
 
     def _fee(self, contracts: int) -> Decimal:
@@ -304,13 +288,26 @@ class Command(BaseCommand):
                         description=f"{symbol} spread segment {index} close",
                     )
                 )
+        short_cash = (self._mark(short_row) * contracts * 100).quantize(D("0.01"))
+        long_cash = (self._mark(long_row) * contracts * 100).quantize(D("0.01"))
+        if short_cash - long_cash != credit:
+            short_cash = credit + long_cash  # keep the combo net exact
         transactions.append(
             self._book(
                 ts=opened,
-                position_legs=[(short, -contracts), (long_, contracts)],
-                cash=credit,
-                fee=self._fee(contracts * 2),
-                description=f"open {symbol} {side} credit spread",
+                position_legs=[(short, -contracts)],
+                cash=short_cash,
+                fee=self._fee(contracts),
+                description=f"open {symbol} short leg",
+            )
+        )
+        transactions.append(
+            self._book(
+                ts=opened,
+                position_legs=[(long_, contracts)],
+                cash=-long_cash,
+                fee=self._fee(contracts),
+                description=f"open {symbol} long leg",
             )
         )
         self._trade(f"{symbol} {side} credit spread", transactions)
@@ -346,14 +343,25 @@ class Command(BaseCommand):
             * 100
         )
         credit = max(credit.quantize(D("0.01")), D("50.00"))
-        tx = self._book(
-            ts=timezone.now() - datetime.timedelta(days=random.randint(4, 15)),
-            position_legs=[(inst, qty) for inst, qty, _ in legs],
-            cash=credit,
-            fee=self._fee(contracts * 4),
-            description=f"open {symbol} iron condor",
-        )
-        self._trade(f"{symbol} iron condor", [tx])
+        opened = timezone.now() - datetime.timedelta(days=random.randint(4, 15))
+        leg_cash = [
+            (inst, qty, (mark * contracts * 100).quantize(D("0.01")) * (1 if qty < 0 else -1))
+            for inst, qty, mark in legs
+        ]
+        drift = credit - sum(cash for _i, _q, cash in leg_cash)
+        first_inst, first_qty, first_cash = leg_cash[0]
+        leg_cash[0] = (first_inst, first_qty, first_cash + drift)  # combo net exact
+        transactions = [
+            self._book(
+                ts=opened,
+                position_legs=[(inst, qty)],
+                cash=cash,
+                fee=self._fee(contracts),
+                description=f"open {symbol} condor leg",
+            )
+            for inst, qty, cash in leg_cash
+        ]
+        self._trade(f"{symbol} iron condor", transactions)
 
     def _long_option(self, symbol: str, *, side: str, contracts: int, dte: int) -> None:
         self.stdout.write(f"open {symbol} long {side}…")
@@ -510,18 +518,53 @@ class Command(BaseCommand):
         premium = D(random.randrange(150, 1700)) + D("0.75")
         win = random.random() > 0.25
         debit = (premium * (D("0.35") if win else D("1.55"))).quantize(D("0.01"))
-        open_tx = self._book(
-            ts=open_ts,
-            position_legs=legs,
-            cash=premium,
-            fee=self._fee(contracts * len(legs)),
-            description=f"open {symbol} history",
-        )
-        close_tx = self._book(
-            ts=close_ts,
-            position_legs=[(inst, -qty) for inst, qty in legs],
-            cash=-debit,
-            fee=self._fee(contracts * len(legs)),
-            description=f"close {symbol} history",
-        )
-        self._trade(f"{symbol} history {days_ago}", [open_tx, close_tx])
+        def wing_split(net: D) -> "tuple[D, D]":
+            """(short_leg_cash, long_leg_cash): short receives net + wing,
+            long pays the wing — combo nets exactly to `net`."""
+            wing = (net * D("0.65")).quantize(D("0.01"))
+            return net + wing, wing
+
+        transactions = []
+        if len(legs) == 1:
+            transactions.append(
+                self._book(
+                    ts=open_ts,
+                    position_legs=legs,
+                    cash=premium,
+                    fee=self._fee(contracts),
+                    description=f"open {symbol} history",
+                )
+            )
+            transactions.append(
+                self._book(
+                    ts=close_ts,
+                    position_legs=[(inst, -qty) for inst, qty in legs],
+                    cash=-debit,
+                    fee=self._fee(contracts),
+                    description=f"close {symbol} history",
+                )
+            )
+        else:  # per-leg fills at the same instant → per-leg prices derive
+            open_short, open_long = wing_split(premium)
+            close_short, close_long = wing_split(debit)
+            for (inst, qty), cash in zip(legs, (open_short, -open_long)):
+                transactions.append(
+                    self._book(
+                        ts=open_ts,
+                        position_legs=[(inst, qty)],
+                        cash=cash,
+                        fee=self._fee(contracts),
+                        description=f"open {symbol} history leg",
+                    )
+                )
+            for (inst, qty), cash in zip(legs, (-close_short, close_long)):
+                transactions.append(
+                    self._book(
+                        ts=close_ts,
+                        position_legs=[(inst, -qty)],
+                        cash=cash,
+                        fee=self._fee(contracts),
+                        description=f"close {symbol} history leg",
+                    )
+                )
+        self._trade(f"{symbol} history {days_ago}", transactions)

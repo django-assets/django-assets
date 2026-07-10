@@ -571,3 +571,99 @@ def test_account_value_series_daily_marks(user, usd, accounts, spy):
     assert values[datetime.date(2026, 7, 2)] == D("10000.00") + D("10400.00")
     # the deposit day itself (no market data yet) still appears via cash
     assert values[datetime.date(2026, 6, 28)] == D("20000.00")
+
+
+def test_classify_trade_live_and_closed(user, usd, accounts, spy, pcs):
+    from django_assets.trades.reports import classify_trade
+
+    # live PCS: classify over all legs
+    assert classify_trade(pcs["trade"]) == "bull_put_spread"
+
+
+def test_classify_trade_closed_uses_opening_structure(user, closed):
+    from django_assets.trades.reports import classify_trade
+
+    assert classify_trade(closed["trade"]) == "short_put"
+
+
+def test_same_timestamp_opens_merge_into_one_cohort(user, usd, accounts, spy):
+    """A combo booked as per-leg fills at the SAME timestamp (broker
+    reality: one combo order, per-leg prices) is ONE cohort: combined
+    opening premium, per-leg prices derivable in history."""
+    short_put = make_option(usd, spy, strike="190", right="P")
+    long_put = make_option(usd, spy, strike="185", right="P")
+    trade = Trade.objects.create(user=user, name="per-leg pcs")
+    trade.assign(
+        book(accounts, usd, ts=OPEN_TS, position_legs=[(short_put, -5)], cash="1075.00"),
+        fraction=1,
+    )
+    trade.assign(
+        book(accounts, usd, ts=OPEN_TS, position_legs=[(long_put, 5)], cash="-710.00"),
+        fraction=1,
+    )
+    close_ts = OPEN_TS + datetime.timedelta(days=5)
+    trade.assign(
+        book(accounts, usd, ts=close_ts, position_legs=[(short_put, 5)], cash="-500.00"),
+        fraction=1,
+    )
+    trade.assign(
+        book(accounts, usd, ts=close_ts, position_legs=[(long_put, -5)], cash="300.00"),
+        fraction=1,
+    )
+    rows = closed_option_strategies(user)
+    row = next(r for r in rows if r.trade == trade)
+    assert row.initial_premium == D("365.00")  # 1075 − 710, one cohort
+    assert row.realized_pnl == D("165.00")
+    legs = {leg.strike: leg for leg in row.legs}
+    assert legs[D("190")].open_price == D("2.15")  # 1075 / 500
+    assert legs[D("190")].close_price == D("1.0000")
+    assert legs[D("185")].open_price == D("1.42")
+    assert legs[D("185")].close_price == D("0.60")
+
+
+def test_open_report_roll_inclusive_pnl(user, rolled, usd, spy):
+    marks = Marks(
+        {
+            spy: PriceQuote(
+                price=D("57.20"), currency=usd, as_of=None, source="t", kind=PriceKind.EOD
+            ),
+            rolled["b"]: OptionQuote(
+                price=D("1.00"), currency=usd, as_of=None, source="t", kind=PriceKind.EOD
+            ),
+        }
+    )
+    row = next(r for r in open_option_strategies(user, marks) if r.trade == rolled["trade"])
+    # live: premium 530.06, cost to close 500 → unrealized 30.06
+    assert row.unrealized_pnl == D("30.06")
+    # roll-inclusive: (30.06 + 400.67) / premium_incl_rolls
+    assert row.pnl_pct_incl_rolls == (D("30.06") + D("400.67")) / row.premium_incl_rolls
+
+
+def test_performance_weekly_buckets_and_symbol_filter(user, closed, spy):
+    stats = strategy_performance(user, underlyings=["SPY"])
+    assert stats.total_profit == D("433.25")
+    empty = strategy_performance(user, underlyings=["ZZZ"])
+    assert empty.total_profit == D(0)
+    week_start = datetime.date(2026, 6, 1)  # Monday of the close week
+    assert strategy_performance(user).weekly_profit[week_start] == D("433.25")
+
+
+def test_closed_strategy_assigned_flag(user, usd, accounts, spy):
+    csp = make_option(usd, spy, strike="60", right="P", expiry=datetime.date(2026, 6, 19))
+    t0 = datetime.datetime(2026, 6, 1, 14, 0, tzinfo=UTC)
+    trade = Trade.objects.create(user=user, name="assigned csp")
+    trade.assign(book(accounts, usd, ts=t0, position_legs=[(csp, -1)], cash="120.00"), fraction=1)
+    # assignment: option goes to zero, shares arrive, strike cash leaves
+    trade.assign(
+        book(
+            accounts,
+            usd,
+            ts=datetime.datetime(2026, 6, 19, 20, 0, tzinfo=UTC),
+            position_legs=[(csp, 1), (spy, 100)],
+            cash="-6000.00",
+        ),
+        fraction=1,
+    )
+    rows = closed_option_strategies(user)
+    row = next(r for r in rows if r.trade == trade)
+    assert row.assigned is True

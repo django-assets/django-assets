@@ -42,6 +42,29 @@ from django_assets.trades.models import Trade, TradeAllocation
 
 STRATEGY_CATEGORY = "strategy"
 
+
+def classify_trade(trade: Trade) -> str:
+    """Structural strategy classification for a whole trade (ADR-0037's
+    classify_structure, applied trade-wide): LIVE trades classify over
+    all position legs (closed cohorts net away, leaving the live
+    structure); fully-CLOSED trades classify over their opening
+    event's structure (everything nets to zero otherwise)."""
+    from django_assets.trades.detection import classify_structure
+
+    allocations = list(
+        trade.allocations.filter(category="").select_related("leg__instrument", "leg__transaction")
+    )
+    legs = [allocation.leg for allocation in allocations]
+    if not legs:
+        return "stock"
+    if trade.status == "closed":
+        by_ts: dict[datetime.datetime, list[Any]] = {}
+        for allocation in allocations:
+            by_ts.setdefault(allocation.leg.transaction.timestamp, []).append(allocation.leg)
+        legs = by_ts[sorted(by_ts)[0]]
+    return classify_structure(legs)
+
+
 _DAYS_PER_YEAR = Decimal(365)
 
 
@@ -83,6 +106,7 @@ class OpenStrategy:
     net_value: Decimal | None  # signed liquidation value of the option legs
     unrealized_pnl: Decimal | None
     pnl_pct: Decimal | None
+    pnl_pct_incl_rolls: Decimal | None  # (unrealized + realized rolls) / premium incl. rolls
     delta_pct: Decimal | None
     moneyness: str | None  # "ITM" | "OTM"
     moneyness_pct: Decimal | None
@@ -117,6 +141,7 @@ class ClosedStrategy:
     initial_premium: Decimal
     realized_pnl: Decimal  # option cash flows, before fees
     fees: Decimal
+    assigned: bool  # shares moved inside this trade (exercise/assignment)
     legs: "list[ClosedLeg]"
 
     @property
@@ -159,6 +184,7 @@ class PerformanceStats:
     largest_loss: Decimal | None
     strategy_counts: "dict[str, int]"
     monthly_profit: "dict[datetime.date, Decimal]"
+    weekly_profit: "dict[datetime.date, Decimal]"  # keyed by ISO week Monday
     daily_cumulative: "list[tuple[datetime.date, Decimal]]"
 
 
@@ -203,6 +229,32 @@ def _events(trade: Trade) -> "list[_Event]":
         .select_related("leg", "leg__transaction", "leg__instrument")
         .order_by("leg__transaction__timestamp", "leg__transaction_id", "id")
     )
+    # Fills sharing an exact timestamp are ONE market event (a combo
+    # order booked per leg with per-leg prices); grouping by timestamp
+    # keeps the cohort/premium math on the combo, while per-leg prices
+    # remain derivable from the underlying single-instrument fills.
+    grouped: dict[datetime.datetime, _Event] = {}
+    for allocation in allocations:
+        tx = allocation.leg.transaction
+        event = grouped.setdefault(tx.timestamp, _Event(when=tx.timestamp))
+        if allocation.category == "":
+            iid = allocation.leg.instrument_id
+            event.positions[iid] = event.positions.get(iid, Decimal(0)) + allocation.amount
+        elif allocation.category in ("revenue", "cost"):
+            event.cash += allocation.amount
+        elif allocation.category == "fee":
+            event.fees += -allocation.amount  # fees stored as negative cash
+    return sorted(grouped.values(), key=lambda event: event.when)
+
+
+def _transaction_events(trade: Trade) -> "list[_Event]":
+    """Like _events, but at raw transaction granularity (no timestamp
+    merge) — the source for per-leg price derivation."""
+    allocations = (
+        TradeAllocation.objects.filter(trade_id__in=trade._tree_pks())
+        .select_related("leg", "leg__transaction", "leg__instrument")
+        .order_by("leg__transaction__timestamp", "leg__transaction_id", "id")
+    )
     grouped: dict[int, _Event] = {}
     for allocation in allocations:
         tx = allocation.leg.transaction
@@ -213,7 +265,7 @@ def _events(trade: Trade) -> "list[_Event]":
         elif allocation.category in ("revenue", "cost"):
             event.cash += allocation.amount
         elif allocation.category == "fee":
-            event.fees += -allocation.amount  # fees stored as negative cash
+            event.fees += -allocation.amount
     return sorted(grouped.values(), key=lambda event: event.when)
 
 
@@ -446,6 +498,12 @@ def open_option_strategies(user: Any, price_source: PriceSource) -> "list[OpenSt
             if unrealized is not None and initial_premium
             else None
         )
+        realized_rolls_total = sum((segment.realized_pnl for segment in rolls), Decimal(0))
+        pnl_pct_incl_rolls = (
+            (unrealized + realized_rolls_total) / abs(premium_incl_rolls)
+            if unrealized is not None and premium_incl_rolls
+            else None
+        )
 
         primary: OpenLeg | None = None
 
@@ -513,6 +571,7 @@ def open_option_strategies(user: Any, price_source: PriceSource) -> "list[OpenSt
                 net_value=net_value,
                 unrealized_pnl=unrealized,
                 pnl_pct=pnl_pct,
+                pnl_pct_incl_rolls=pnl_pct_incl_rolls,
                 delta_pct=delta_pct,
                 moneyness=moneyness,
                 moneyness_pct=moneyness_pct,
@@ -544,6 +603,28 @@ def closed_option_strategies(user: Any) -> "list[ClosedStrategy]":
         open_price: dict[int, Decimal | None] = {}
         close_price: dict[int, Decimal | None] = {}
         leg_fees: dict[int, Decimal] = defaultdict(Decimal)
+        # Per-transaction (not merged-event) single-instrument fills give
+        # per-leg prices even when a combo is booked as per-leg fills.
+        tx_prices: dict[tuple[int, bool], Decimal] = {}
+        tx_walk: dict[int, Decimal] = defaultdict(Decimal)
+        for tx_event in _transaction_events(trade):
+            touched_tx = [iid for iid in tx_event.positions if iid in metas]
+            if len(touched_tx) == 1 and tx_event.positions[touched_tx[0]] != 0:
+                iid = touched_tx[0]
+                meta = metas[iid]
+                per = meta.instrument.quantize_price(
+                    abs(tx_event.cash) / abs(tx_event.positions[iid]) / meta.instrument.multiplier
+                )
+                before_walk = tx_walk[iid]
+                delta = tx_event.positions[iid]
+                opening_fill = before_walk == 0 or (delta > 0) == (before_walk > 0)
+                key = (iid, opening_fill)
+                tx_prices.setdefault(key, per)
+                if before_walk + delta == 0:
+                    tx_prices[(iid, False)] = per
+            for iid_w, amt in tx_event.positions.items():
+                if iid_w in metas:
+                    tx_walk[iid_w] += amt
         closed_on_by_iid: dict[int, datetime.date] = {}
         opened_on: datetime.date | None = None
         closed_on: datetime.date | None = None
@@ -573,13 +654,11 @@ def closed_option_strategies(user: Any) -> "list[ClosedStrategy]":
                 positions[iid] += event.positions[iid]
                 if before == 0 and positions[iid] != 0:
                     first_side.setdefault(iid, "short" if positions[iid] < 0 else "long")
-                    if iid == single:
-                        open_price.setdefault(iid, per_contract)
+                    open_price.setdefault(iid, tx_prices.get((iid, True)))
                 peak[iid] = max(peak[iid], abs(positions[iid]))
                 if positions[iid] == 0 and before != 0:
                     closed_on_by_iid[iid] = event.when.date()
-                    if iid == single:
-                        close_price[iid] = per_contract
+                    close_price[iid] = tx_prices.get((iid, False))
             if all(positions[iid] == 0 for iid in metas):
                 closed_on = event.when.date()
         if not seen_option_event:
@@ -602,6 +681,11 @@ def closed_option_strategies(user: Any) -> "list[ClosedStrategy]":
         ]
         raw_fees = trade.get_summary()["fees"]
         summary_fees = raw_fees if isinstance(raw_fees, Decimal) else Decimal(0)
+        share_moved = any(
+            iid not in metas and delta != 0
+            for event in events
+            for iid, delta in event.positions.items()
+        )
         rows.append(
             ClosedStrategy(
                 trade=trade,
@@ -614,6 +698,7 @@ def closed_option_strategies(user: Any) -> "list[ClosedStrategy]":
                 initial_premium=initial_premium,
                 realized_pnl=realized,
                 fees=-summary_fees if summary_fees < 0 else summary_fees,
+                assigned=share_moved,
                 legs=legs,
             )
         )
@@ -757,14 +842,25 @@ def account_summary(
 # -- calendar / performance / flow ----------------------------------------------------------
 
 
-def premium_calendar(user: Any, year: int, month: int) -> "dict[datetime.date, CalendarDay]":
+def premium_calendar(
+    user: Any, year: int, month: int, *, underlyings: "list[str] | None" = None
+) -> "dict[datetime.date, CalendarDay]":
     """Per-day option cash flow (premium received minus paid, net of
     fees) with event counts, plus win/loss counts of trades that CLOSED
-    that day."""
+    that day. `underlyings` filters by underlying ticker code."""
+    wanted = {code.upper() for code in underlyings} if underlyings else None
+
+    def keep(metas: "dict[int, OptionMeta]") -> bool:
+        if wanted is None:
+            return True
+        return any(meta.underlying.code.upper() in wanted for meta in metas.values())
+
     days: dict[datetime.date, dict[str, Any]] = defaultdict(
         lambda: {"net": Decimal(0), "events": 0, "wins": 0, "losses": 0}
     )
     for trade, _net, metas in _trades_with_options(user):
+        if not keep(metas):
+            continue
         for event in _events(trade):
             if not any(iid in metas for iid in event.positions):
                 continue
@@ -774,6 +870,10 @@ def premium_calendar(user: Any, year: int, month: int) -> "dict[datetime.date, C
             days[when]["net"] += event.cash - event.fees
             days[when]["events"] += 1
     for row in closed_option_strategies(user):
+        if wanted is not None and (
+            row.underlying is None or row.underlying.code.upper() not in wanted
+        ):
+            continue
         closed_when = row.closed_on
         if closed_when is None or (closed_when.year, closed_when.month) != (year, month):
             continue
@@ -791,6 +891,7 @@ def strategy_performance(
     user: Any,
     *,
     strategies: "list[str] | None" = None,
+    underlyings: "list[str] | None" = None,
     start: datetime.date | None = None,
     end: datetime.date | None = None,
 ) -> PerformanceStats:
@@ -798,6 +899,9 @@ def strategy_performance(
     rows = closed_option_strategies(user)
     if strategies:
         rows = [row for row in rows if row.strategy in strategies]
+    if underlyings:
+        wanted = {code.upper() for code in underlyings}
+        rows = [row for row in rows if row.underlying and row.underlying.code.upper() in wanted]
     if start:
         rows = [row for row in rows if row.closed_on and row.closed_on >= start]
     if end:
@@ -807,11 +911,14 @@ def strategy_performance(
     wins = [p for p in profits if p > 0]
     losses = [p for p in profits if p <= 0]
     monthly: dict[datetime.date, Decimal] = defaultdict(Decimal)
+    weekly: dict[datetime.date, Decimal] = defaultdict(Decimal)
     daily: dict[datetime.date, Decimal] = defaultdict(Decimal)
     counts: dict[str, int] = defaultdict(int)
     for row in rows:
         if row.closed_on:
             monthly[row.closed_on.replace(day=1)] += row.net_profit
+            week_monday = row.closed_on - datetime.timedelta(days=row.closed_on.weekday())
+            weekly[week_monday] += row.net_profit
             daily[row.closed_on] += row.net_profit
         counts[row.strategy or "mixed"] += 1
 
@@ -837,17 +944,34 @@ def strategy_performance(
         largest_loss=min(losses) if losses else None,
         strategy_counts=dict(counts),
         monthly_profit=dict(monthly),
+        weekly_profit=dict(weekly),
         daily_cumulative=cumulative,
     )
 
 
-def pnl_flow(user: Any) -> "list[FlowRow]":
+def pnl_flow(
+    user: Any,
+    *,
+    strategies: "list[str] | None" = None,
+    underlyings_filter: "list[str] | None" = None,
+    start: datetime.date | None = None,
+    end: datetime.date | None = None,
+) -> "list[FlowRow]":
     """Realized P&L flow rows aggregated by (underlying, right, outcome)
     over finalized trades — the sankey's edges."""
+    wanted = {code.upper() for code in underlyings_filter} if underlyings_filter else None
     buckets: dict[tuple[int, str, str], Decimal] = defaultdict(Decimal)
     underlyings: dict[int, Instrument] = {}
     for row in closed_option_strategies(user):
         if row.underlying is None:
+            continue
+        if strategies and row.strategy not in strategies:
+            continue
+        if wanted is not None and row.underlying.code.upper() not in wanted:
+            continue
+        if start and (row.closed_on is None or row.closed_on < start):
+            continue
+        if end and (row.closed_on is None or row.closed_on > end):
             continue
         rights = {leg.right for leg in row.legs}
         right = rights.pop() if len(rights) == 1 else "mixed"
@@ -946,8 +1070,17 @@ class FlowSummary:
         return abs(amount) / denominator if denominator else None
 
 
-def pnl_flow_summary(user: Any) -> FlowSummary:
-    rows = pnl_flow(user)
+def pnl_flow_summary(
+    user: Any,
+    *,
+    strategies: "list[str] | None" = None,
+    underlyings: "list[str] | None" = None,
+    start: datetime.date | None = None,
+    end: datetime.date | None = None,
+) -> FlowSummary:
+    rows = pnl_flow(
+        user, strategies=strategies, underlyings_filter=underlyings, start=start, end=end
+    )
     by_symbol: dict[Instrument, Decimal] = defaultdict(Decimal)
     by_right: dict[str, Decimal] = defaultdict(Decimal)
     by_outcome: dict[str, Decimal] = defaultdict(Decimal)
