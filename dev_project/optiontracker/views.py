@@ -32,6 +32,25 @@ DATE_RANGES = [
 ]
 RANGE_LABELS = dict(DATE_RANGES)
 
+#: The Strategy filter's fixed canonical vocabulary + order (reference
+#: product choice; not data-derived — the menu always offers the full
+#: taxonomy). Slugs are the ADR-0037 classifier's; labels live in
+#: tracker_format.STRATEGY_LABELS.
+STRATEGY_FILTER_ORDER = [
+    "short_put",
+    "covered_call",
+    "bull_put_spread",
+    "bear_call_spread",
+    "short_strangle",
+    "iron_condor",
+    "long_call",
+    "long_put",
+    "bear_put_spread",
+    "bull_call_spread",
+    "long_straddle",
+    "short_straddle",
+]
+
 BROKERS = [
     ("Robinhood", "RH", False),
     ("Charles Schwab", "CS", False),
@@ -171,7 +190,7 @@ def option_positions(request: HttpRequest) -> HttpResponse:
     user, context = _base_context(request, "positions")
     rows = reports.open_option_strategies(user, services.price_source())
 
-    strategy_options = sorted({row.strategy for row in rows if row.strategy})
+    strategy_options = STRATEGY_FILTER_ORDER
 
     query = request.GET.get("q", "").strip()
     selected = [s for s in request.GET.getlist("strategy") if s]
@@ -338,7 +357,7 @@ def analytics(request: HttpRequest) -> HttpResponse:
         start=start,
         end=end,
     )
-    strategy_options = sorted(reports.strategy_performance(user).strategy_counts)
+    strategy_options = STRATEGY_FILTER_ORDER
     today = datetime.date.today()
     account_values = reports.account_value_series(
         user,
@@ -405,7 +424,7 @@ def pnl_flow_view(request: HttpRequest) -> HttpResponse:
             "top10_applied": top10_applied,
             "query": query,
             "selected_strategies": selected,
-            "strategy_options": sorted(reports.strategy_performance(user).strategy_counts),
+            "strategy_options": STRATEGY_FILTER_ORDER,
             **_range_context(request, range_code),
         }
     )
@@ -581,7 +600,7 @@ def history(request: HttpRequest) -> HttpResponse:
     range_code, start, end = _date_window(request)
 
     all_rows = reports.closed_option_strategies(user)
-    strategy_options = sorted({row.strategy for row in all_rows if row.strategy})
+    strategy_options = STRATEGY_FILTER_ORDER
 
     if assigned_only:
         # Reference: the Assigned checkbox swaps in a different table —
