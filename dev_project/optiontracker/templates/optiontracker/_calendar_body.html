@@ -49,15 +49,15 @@
         {% endfor %}
       </select>
     </label>
-    <a class="btn" href="{{ prev_url }}" aria-label="Previous {% if view_mode == 'day' %}month{% else %}year{% endif %}">
+    <a class="btn" href="{{ prev_url }}" aria-label="Previous {% if view_mode == 'day' %}month{% elif view_mode == 'week' %}quarter{% else %}year{% endif %}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
     </a>
     {% if next_disabled %}
-    <span class="btn btn-inert" aria-disabled="true" aria-label="Next {% if view_mode == 'day' %}month{% else %}year{% endif %}">
+    <span class="btn btn-inert" aria-disabled="true" aria-label="Next {% if view_mode == 'day' %}month{% elif view_mode == 'week' %}quarter{% else %}year{% endif %}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
     </span>
     {% else %}
-    <a class="btn" href="{{ next_url }}" aria-label="Next {% if view_mode == 'day' %}month{% else %}year{% endif %}">
+    <a class="btn" href="{{ next_url }}" aria-label="Next {% if view_mode == 'day' %}month{% elif view_mode == 'week' %}quarter{% else %}year{% endif %}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
     </a>
     {% endif %}
@@ -88,7 +88,7 @@
     {% for cell in week_cards %}
     <div class="month-card week-card">
       <div class="month-card-kicker muted">WEEK {{ cell.iso_week }} • {{ cell.iso_year }}</div>
-      <div class="month-card-name">Week of {{ cell.date|date:"M j" }}</div>
+      <div class="month-card-name week-card-name">Week of {{ cell.date|date:"M j" }}</div>
       {% if cell.data.trades %}
       <div class="month-card-premium {{ cell.data.pnl|sign_class }}">{{ cell.data.pnl|money }}</div>
       <div class="month-card-trades muted">{{ cell.data.trades }} trade{{ cell.data.trades|pluralize }}</div>

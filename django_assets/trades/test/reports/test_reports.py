@@ -1101,8 +1101,8 @@ def test_realized_weeks_bucket_by_iso_monday(user, closed):
     from django_assets.trades.reports import realized_weeks
 
     weeks = realized_weeks(user, 2026)
-    # closed fixture closes 2026-06-06 (a Saturday) → ISO week Monday 06-01
-    monday = datetime.date(2026, 6, 1)
-    assert monday in weeks
-    assert weeks[monday].trades == 1
-    assert weeks[monday].pnl == 446.25 - 13.00  # realized − fees
+    # closed fixture closes 2026-06-06 (a Saturday) → Sunday-start week 05-31
+    sunday = datetime.date(2026, 5, 31)
+    assert sunday in weeks
+    assert weeks[sunday].trades == 1
+    assert weeks[sunday].pnl == 446.25 - 13.00  # realized − fees

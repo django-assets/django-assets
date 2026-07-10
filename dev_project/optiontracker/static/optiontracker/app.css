@@ -1000,6 +1000,8 @@ dialog.app-dialog.tour-open {
 }
 .month-stat-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-top: 2px; }
 .month-stat-label-accent { color: rgb(132, 152, 255); }
+:root[data-theme="light"] .month-stat-label-accent { color: rgb(85, 112, 241); }
+.week-card-name { text-transform: none; }
 .month-card-kicker { font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .month-stat-value { font-size: 22px; font-weight: 700; margin: 4px 0 2px; }
 .month-stat-sub { font-size: 12.5px; margin-top: 4px; }

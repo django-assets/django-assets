@@ -466,19 +466,21 @@ def calendar_view(request: HttpRequest) -> HttpResponse:
         q_end = (datetime.date(year, q_end_month, 1) + datetime.timedelta(days=31)).replace(
             day=1
         ) - datetime.timedelta(days=1)
-        first_monday = q_start - datetime.timedelta(days=q_start.weekday())
-        monday = first_monday
-        while monday <= q_end:
-            iso = monday.isocalendar()
+        # Sunday-start weeks (matching the Sunday-first day grid and the
+        # reference's "Week of <Sunday>" labels).
+        first_sunday = q_start - datetime.timedelta(days=(q_start.weekday() + 1) % 7)
+        sunday = first_sunday
+        while sunday <= q_end:
+            iso = (sunday + datetime.timedelta(days=1)).isocalendar()
             week_cards.append(
                 {
-                    "date": monday,
+                    "date": sunday,
                     "iso_week": iso.week,
                     "iso_year": iso.year,
-                    "data": periods.get(monday),  # None -> template renders $0.00
+                    "data": periods.get(sunday),  # None -> template renders $0.00
                 }
             )
-            monday += datetime.timedelta(days=7)
+            sunday += datetime.timedelta(days=7)
         context["quarter"] = quarter
         context["quarter_options"] = [1, 2, 3, 4]
     else:

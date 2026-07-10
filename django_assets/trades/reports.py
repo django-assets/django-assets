@@ -1604,7 +1604,9 @@ def realized_weeks(
     """Per-ISO-week realized PnL (Week-view cells), keyed by week Monday."""
     return _realized_buckets(
         user,
-        lambda on: (on - datetime.timedelta(days=on.weekday())) if on.year == year else None,
+        lambda on: (
+            (on - datetime.timedelta(days=(on.weekday() + 1) % 7)) if on.year == year else None
+        ),
         underlyings=underlyings,
     )
 
