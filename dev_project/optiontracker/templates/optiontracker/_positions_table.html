@@ -1,7 +1,7 @@
 {% load tracker_format %}
 {% if is_htmx %}<span id="pos-count" hx-swap-oob="true">({{ count }})</span>{% endif %}
 <div id="positions-table" class="table-wrap">
-  <table class="data-table positions-table">
+  <table class="data-table positions-table"{% if sorted_col_index %} data-sort-col="{{ sorted_col_index }}"{% endif %}>
     <thead>
       <tr>
         <th class="sortable{% if sort_state.symbol.active %} sorted{% endif %}">

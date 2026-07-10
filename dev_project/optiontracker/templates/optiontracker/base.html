@@ -61,7 +61,7 @@
           Option Positions
         </a>
         <div class="sidenav-group {% if nav == 'wheel' or nav == 'equities' %}open{% endif %}">
-          <a href="{% url 'optiontracker:wheel' %}" class="sidenav-item {% if nav == 'wheel' or nav == 'equities' %}active{% endif %}">
+          <a href="{% url 'optiontracker:wheel' %}" class="sidenav-item {% if nav == 'wheel' or nav == 'equities' %}expanded{% endif %}">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 21V7M16 21V11"/></svg>
             Equity Positions
             <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -74,15 +74,15 @@
           {% endif %}
         </div>
         <div class="sidenav-group {% if nav == 'analytics' or nav == 'pnl_flow' %}open{% endif %}">
-          <a href="{% url 'optiontracker:analytics' %}" class="sidenav-item {% if nav == 'analytics' or nav == 'pnl_flow' %}active{% endif %}">
+          <a href="{% url 'optiontracker:analytics' %}" class="sidenav-item {% if nav == 'analytics' or nav == 'pnl_flow' %}expanded{% endif %}">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="M8 17v-6M13 17V7M18 17v-9"/></svg>
             Analytics
             <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
           </a>
           {% if nav == 'analytics' or nav == 'pnl_flow' %}
           <div class="sidenav-sub">
-            <a href="{% url 'optiontracker:analytics' %}" class="sidenav-subitem {% if nav == 'analytics' %}active{% endif %}">Cumulative</a>
-            <a href="{% url 'optiontracker:pnl-flow' %}" class="sidenav-subitem {% if nav == 'pnl_flow' %}active{% endif %}">PnL Flow</a>
+            <a href="{% url 'optiontracker:analytics' %}" class="sidenav-subitem {% if nav == 'analytics' %}active{% endif %}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>Cumulative</a>
+            <a href="{% url 'optiontracker:pnl-flow' %}" class="sidenav-subitem {% if nav == 'pnl_flow' %}active{% endif %}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>PnL Flow</a>
           </div>
           {% endif %}
         </div>

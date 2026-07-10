@@ -218,6 +218,14 @@ def option_positions(request: HttpRequest) -> HttpResponse:
         column = "symbol"
         rows = sorted(rows, key=_symbol_of, reverse=descending)
 
+    sorted_col_index = {
+        "symbol": 1,
+        "expiration": 3,
+        "pnl": 4,
+        "market_value": 5,
+        "delta": 6,
+        "moneyness": 7,
+    }.get(column)
     sort_state = {}
     for name in ("symbol", *sorts):
         params = request.GET.copy()
@@ -246,6 +254,7 @@ def option_positions(request: HttpRequest) -> HttpResponse:
             "selected_strategies": selected,
             "strategy_options": strategy_options,
             "sort_state": sort_state,
+            "sorted_col_index": sorted_col_index,
             "pnl_mode": pnl_mode,
             "metric": metric,
             "pnl_toggle_url": _toggle_url(request, "pnl", "pct" if pnl_mode == "usd" else "usd"),
