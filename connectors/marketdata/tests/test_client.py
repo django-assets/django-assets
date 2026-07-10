@@ -52,6 +52,21 @@ def test_404_no_data_is_nodata_not_error():
     assert isinstance(client.get("/x"), NoData)
 
 
+def test_404_with_error_body_is_still_nodata():
+    # The vendor answers never-listed option symbols with HTTP 404 and
+    # s:"error" ("No option found...") — per its troubleshooting docs a
+    # 404 is "a valid request that simply has no data", i.e. a KNOWN
+    # negative: the honest answer is None, never a raised error.
+    client = client_for(
+        404,
+        {
+            "s": "error",
+            "errmsg": "No option found. No option was found for this strike and expiration.",
+        },
+    )
+    assert isinstance(client.get("/v1/options/quotes/SPY260710P00005000/"), NoData)
+
+
 def test_400_raises_bad_request():
     client = client_for(400, {"s": "error", "errmsg": "Bad parameters"})
     with pytest.raises(MarketDataBadRequest):

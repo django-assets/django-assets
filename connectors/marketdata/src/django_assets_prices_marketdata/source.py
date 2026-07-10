@@ -96,10 +96,6 @@ class _Entitlements:
     options_delayed: bool
 
 
-class _UnknownSymbol(Exception):
-    """The vendor rejected the symbol — unpriceable, not an error."""
-
-
 class MarketDataPriceSource:
     """PriceSource (ADR-0039) over MarketData.app.
 
@@ -399,6 +395,12 @@ class MarketDataPriceSource:
         try:
             if mapped.is_option:
                 rows = self._option_rows(instrument, mapped.symbol)
+                if not rows and isinstance(
+                    self._client.get(f"/v1/options/quotes/{mapped.symbol}/"), NoData
+                ):
+                    # No EOD archive AND no live quote: the vendor does
+                    # not know this contract — unpriceable, honestly.
+                    return None
                 sessions = sorted(rows)
                 closes = DateRange(sessions[0], sessions[-1]) if sessions else None
                 live = self._live_option_ok(instrument)
@@ -419,7 +421,7 @@ class MarketDataPriceSource:
                 ohlcv=bound,
                 greeks=False,
             )
-        except (MarketDataBadRequest, _UnknownSymbol):
+        except MarketDataBadRequest:
             return None  # the vendor doesn't know the symbol — unpriceable
 
     # -- protocol: quotes ----------------------------------------------------------
@@ -605,7 +607,7 @@ class MarketDataPriceSource:
                 source=SOURCE_LABEL,
                 kind=PriceKind.EOD,
             )
-        except (MarketDataBadRequest, MarketDataEntitlementError, _UnknownSymbol):
+        except (MarketDataBadRequest, MarketDataEntitlementError):
             return None
 
     def get_ohlcv(

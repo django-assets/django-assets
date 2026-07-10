@@ -116,11 +116,11 @@ class MarketDataClient:
         if status == 204:
             return NoData()
         if status == 404:
-            if payload.get("s") == "no_data":
-                return self._no_data(payload)
-            raise MarketDataError(
-                f"HTTP 404 from {path}: {payload.get('errmsg', response.text[:200])}"
-            )
+            # Vendor semantics: 404 = a valid request that simply has no
+            # data — served as s:no_data (candles/quotes) or s:error with
+            # "No option found" (never-listed contracts). Either way it is
+            # a KNOWN negative, not a transport failure: honest None.
+            return self._no_data(payload)
         if status == 400:
             raise MarketDataBadRequest(
                 f"HTTP 400 from {path}: {payload.get('errmsg', 'bad request')}"

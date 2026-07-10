@@ -209,7 +209,14 @@ class FakeVendor:
             series = self.option_series.get(symbol)
             live = self.option_live.get(symbol)
             if series is None and live is None:
-                return self._bad()
+                # Real vendor shape for a never-listed contract: 404 + s:error.
+                return self._respond(
+                    404,
+                    {
+                        "s": "error",
+                        "errmsg": "No option found. No option was found for this strike and expiration.",
+                    },
+                )
             if "from" in params:  # EOD series; vendor's `to` is EXCLUSIVE
                 start = datetime.date.fromisoformat(params["from"])
                 end = datetime.date.fromisoformat(params["to"])

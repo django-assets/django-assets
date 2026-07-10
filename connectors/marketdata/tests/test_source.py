@@ -161,6 +161,30 @@ def test_expired_option_serves_only_history(source, vendor, acme, usd):
     assert source.get_quote(expired, kind=PriceKind.EOD) is not None
 
 
+@freeze_time(FROZEN)
+def test_never_listed_option_is_unpriceable_not_an_error(source, acme, usd):
+    """A well-formed OCC symbol the vendor doesn't know (typo'd strike)
+    answers None everywhere — including through Portfolio-style batch —
+    never a raised error (ADR-0039 §3/§7)."""
+    from django_assets.core.models import Instrument
+    from django_assets.instruments.options.models import OptionMeta
+
+    ghost = Instrument.objects.create(code="ACME-GHOST", multiplier=D("100"), price_currency=usd)
+    OptionMeta.objects.create(
+        instrument=ghost,
+        underlying=acme,
+        expiry=datetime.date(2026, 8, 7),
+        strike=D("5"),
+        right="P",
+    )
+    assert source.capabilities(ghost) is None
+    assert source.get_quote(ghost) is None
+    assert source.get_quote(ghost, kind=PriceKind.DELAYED) is None
+    assert source.get_quote(ghost, kind=PriceKind.EOD) is None
+    assert source.get_close(ghost, on=datetime.date(2026, 7, 6)) is None
+    assert source.get_quotes([ghost])[ghost] is None
+
+
 # -- batch -----------------------------------------------------------------------
 
 
