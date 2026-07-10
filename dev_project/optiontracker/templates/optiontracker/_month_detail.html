@@ -7,6 +7,9 @@
   </div>
   <div class="month-stats">
     <div class="month-stat-card">
+      <span class="month-stat-icon" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="7" r="4"/><path d="M14 5.4v3.2M12.9 8h1.6a.9.9 0 0 0 0-1.8h-1a.9.9 0 0 1 0-1.8h1.6"/><path d="M3 14h3l3.5 2h4a1.5 1.5 0 0 1 0 3H9"/><path d="M3 19h3l3.5 1.5c1.5.5 3 .5 4.5 0l6-2.5a1.4 1.4 0 0 0-1.2-2.5"/></svg>
+      </span>
       <div class="month-stat-label">This Month</div>
       <div class="month-stat-value {{ detail.total_pnl|sign_class }}">{{ detail.total_pnl|money }}</div>
       <div class="month-stat-sub muted">Previous: <span class="{{ detail.previous_pnl|sign_class }}">{{ detail.previous_pnl|money }}</span></div>
@@ -17,34 +20,51 @@
       <div class="month-stat-sub muted">Previous: <span class="{{ detail.previous_avg_daily_pnl|sign_class }}">{{ detail.previous_avg_daily_pnl|money }}</span></div>
     </div>
     <div class="month-stat-card">
+      <span class="month-stat-icon" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 9h18"/></svg>
+      </span>
       <div class="month-stat-label">Trading Days</div>
       <div class="month-stat-value">{{ detail.trading_days }}</div>
       {% month_daily_chart detail.daily %}
       {% if detail.worst_day %}
-      <div class="month-stat-sub">Worst Day: <span class="neg">{{ detail.worst_day.1|money }}</span> <span class="muted">({{ detail.worst_day.0|date:"M j" }})</span></div>
+      <div class="month-stat-sub">Worst Day: <span class="neg">{{ detail.worst_day.1|money }}</span></div>
       {% endif %}
     </div>
   </div>
   <div class="month-transactions">
-    <div class="month-tx-title">Transactions</div>
+    <div class="month-tx-head">
+      <div class="month-tx-title">Transactions</div>
+      <button type="button" class="icon-btn month-tx-expand" aria-label="Expand transactions">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+      </button>
+    </div>
     {% if detail.transactions %}
     <table class="legs-table roll-table month-tx-table">
       <thead>
-        <tr><th>Date</th><th>Ticker</th><th>Type (Contracts)</th><th class="num">Realized PnL</th></tr>
+        <tr><th>Date</th><th>Ticker</th><th>Type</th><th>Action</th><th>Strike</th><th>Expiration</th><th class="num">Amount</th></tr>
       </thead>
       <tbody>
         {% for row in detail.transactions %}
+        {% for leg in row.legs %}
         <tr>
           <td>{{ row.closed_on|date:"M j, Y" }}</td>
           <td>{{ row.underlying.code }}</td>
-          <td>{{ row.strategy|strategy_label }} ({{ row.contracts }})</td>
-          <td class="num {{ row.net_profit|sign_class }}">{{ row.net_profit|money }}</td>
+          <td>{{ leg.right|right_label }}</td>
+          <td>{{ leg.side|action_label }}</td>
+          <td>{{ leg.strike|strike_plain }}</td>
+          <td>{{ row.expiration|date:"M j, Y" }}</td>
+          <td class="num {{ leg.open_price|sign_class }}">{{ leg.open_price|money }}</td>
         </tr>
+        {% endfor %}
         {% endfor %}
       </tbody>
     </table>
     {% else %}
     <p class="muted">No closed trades this month.</p>
     {% endif %}
+  </div>
+  <div class="month-detail-foot">
+    <span class="month-powered">Powered by OptionTracker demo</span>
+    <button type="button" class="btn btn-primary month-share">Share</button>
   </div>
 </div>

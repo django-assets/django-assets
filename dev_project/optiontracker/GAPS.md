@@ -67,5 +67,5 @@ Grader round-7 additions (deep reference features surfaced by the tutorial walkt
 
 | # | Needed by the app | Library had? | Resolution (library) |
 |---|-------------------|--------------|----------------------|
-| 33 | Roll Selection finder — candidate contracts to roll a short option into (later expiries, net credit) | No chain-read surface (ADR-0039 §5a deferred it) | **ADR-0041 OptionChainSource** (OptionContract + get_expirations/get_option_chain), MarketData connector implements it (live-verified); `reports.roll_candidates()` ranks later-dated same-right contracts with net-credit-to-roll |
+| 33 | Roll Selection finder — link an open position to prior closed trades on the same underlying (a roll's predecessors) within a lookback | Rolls existed only as intra-trade adjust events | `reports.roll_link_candidates()` (prior closed strategies, lookback window). (An earlier read of this screen as a forward option-chain finder produced **ADR-0041 OptionChainSource** + `roll_candidates()`; those stay as general option-data infrastructure — chain browsing / expiration pickers — live-verified, not used by this screen.) |
 | 34 | Calendar month-detail dialog — total/previous PnL, win ratio + overall, avg daily, trading days, daily PnL chart, transactions | Only per-day/per-month aggregates | `reports.month_detail()` |

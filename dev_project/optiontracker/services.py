@@ -6,7 +6,7 @@ from django.contrib.auth.models import User
 from django_assets_prices_marketdata import MarketDataPriceSource
 
 from django_assets.core.models import Account
-from django_assets.core.prices import CachedPriceSource, OptionChainSource, PriceSource
+from django_assets.core.prices import CachedPriceSource, PriceSource
 
 _price_source: PriceSource | None = None
 
@@ -23,19 +23,6 @@ def price_source() -> PriceSource:
     if _price_source is None:
         _price_source = CachedPriceSource(MarketDataPriceSource(), ttl=300, history_ttl=14400)
     return _price_source
-
-
-def chain_source() -> OptionChainSource:
-    """The option-chain reader (ADR-0041) for roll candidates: the same
-    MarketData singleton behind price_source(). The TTL wrapper only
-    caches PriceSource reads, so chain enumeration goes to the inner
-    source — call it on user action (a metered fetch), never on page
-    load."""
-    source = price_source()
-    inner = getattr(source, "inner", source)
-    if not isinstance(inner, OptionChainSource):  # pragma: no cover — MarketData implements it
-        raise TypeError("price source cannot enumerate option chains")
-    return inner
 
 
 #: The user-side accounts. "market" is the seeded counterparty account

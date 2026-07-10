@@ -83,8 +83,20 @@
       return;
     }
 
-    // Roll-candidate rows inside the Roll Selection finder: clicking a
-    // row toggles its selection (client-side only; demo-inert).
+    // Roll Selection finder: the header checkbox selects/deselects every
+    // candidate row; clicking a row toggles its own selection (both are
+    // client-side only; demo-inert).
+    var selectAll = event.target.closest(".roll-select-all");
+    if (selectAll) {
+      var selectAllBody = selectAll.closest(".roll-finder-body");
+      if (selectAllBody) {
+        selectAllBody.querySelectorAll("tr.roll-candidate").forEach(function (row) {
+          setRollCandidateSelected(row, selectAll.checked);
+        });
+        updateRollTotals(selectAllBody);
+      }
+      return;
+    }
     var candidateRow = event.target.closest("tr.roll-candidate");
     if (candidateRow) {
       toggleRollCandidate(candidateRow);
@@ -101,8 +113,8 @@
 
     // In-page dialogs (roll finder, share position): any button carrying
     // data-dialog opens the named <dialog>; ✕ or backdrop closes. Roll
-    // finder dialogs lazy-load their candidates on this first open (the
-    // fetch meters a live option-chain read, so never on page load).
+    // finder dialogs lazy-load their candidates on this first open (pure
+    // ledger data, but fetched on click to keep the rows light).
     var dialogButton = event.target.closest("[data-dialog]");
     if (dialogButton) {
       event.stopPropagation();
@@ -307,10 +319,12 @@
 
   // ---- Roll Selection finder ----
   // The dialog carries data-roll-url; its body fragment is fetched via
-  // htmx only when the dialog is first opened (the server call meters a
-  // live option-chain read). Row selection and the running net-credit
-  // total are pure presentation over the fragment's data-net-credit
-  // attributes; Save Selection is demo-inert (just closes the dialog).
+  // htmx only when the dialog is first opened (kept lazy so the positions
+  // rows stay light). Row selection and the two running "with selection"
+  // totals are pure presentation: sums of the fragment's data-premium /
+  // data-pnl attributes on top of the body's data-current-* base values
+  // (all finished library figures). Save Selection is demo-inert (just
+  // closes the dialog).
 
   function loadRollFinder(dialog) {
     if (!dialog || !dialog.hasAttribute("data-roll-url") || dialog.dataset.rollLoaded) return;
@@ -332,20 +346,45 @@
     );
   }
 
-  function toggleRollCandidate(row) {
-    row.classList.toggle("selected");
-    var selected = row.classList.contains("selected");
+  function setRollCandidateSelected(row, selected) {
+    row.classList.toggle("selected", selected);
     row.setAttribute("aria-checked", selected ? "true" : "false");
     var box = row.querySelector('input[type="checkbox"]');
     if (box) box.checked = selected;
-    var dialog = row.closest("dialog");
-    if (!dialog) return;
-    var total = 0;
-    dialog.querySelectorAll("tr.roll-candidate.selected").forEach(function (picked) {
-      total += parseFloat(picked.getAttribute("data-net-credit")) || 0;
+  }
+
+  function toggleRollCandidate(row) {
+    setRollCandidateSelected(row, !row.classList.contains("selected"));
+    updateRollTotals(row.closest(".roll-finder-body"));
+  }
+
+  function updateRollTotals(body) {
+    if (!body) return;
+    var rows = body.querySelectorAll("tr.roll-candidate");
+    var picked = body.querySelectorAll("tr.roll-candidate.selected");
+    var selectAll = body.querySelector(".roll-select-all");
+    if (selectAll) {
+      selectAll.checked = rows.length > 0 && picked.length === rows.length;
+      selectAll.indeterminate = picked.length > 0 && picked.length < rows.length;
+    }
+    var premiumNode = body.querySelector(".roll-total-premium");
+    var pnlNode = body.querySelector(".roll-total-pnl");
+    if (!premiumNode || !pnlNode) return;
+    if (!picked.length) {
+      premiumNode.textContent = "-";
+      pnlNode.textContent = "-";
+      pnlNode.className = "roll-total-pnl";
+      return;
+    }
+    var premium = parseFloat(body.getAttribute("data-current-premium")) || 0;
+    var pnl = parseFloat(body.getAttribute("data-current-pnl")) || 0;
+    picked.forEach(function (row) {
+      premium += parseFloat(row.getAttribute("data-premium")) || 0;
+      pnl += parseFloat(row.getAttribute("data-pnl")) || 0;
     });
-    var node = dialog.querySelector(".roll-total");
-    if (node) node.textContent = formatMoneyJs(total);
+    premiumNode.textContent = formatMoneyJs(premium);
+    pnlNode.textContent = formatMoneyJs(pnl);
+    pnlNode.className = "roll-total-pnl " + (pnl > 0 ? "pos" : pnl < 0 ? "neg" : "");
   }
 
   // ---- Calendar month-detail dialog ----
@@ -715,7 +754,8 @@
         if (!dialog) return null;
         var row = dialog.querySelector("tr.roll-candidate");
         if (row) return row;
-        // Loaded but no candidates (no chain access): ring the dialog.
+        // Loaded but no candidates (no linkable prior closed trades):
+        // ring the dialog instead.
         return dialog.querySelector(".roll-finder-body.loaded") ? dialog : null;
       },
       title: "Roll Candidates",

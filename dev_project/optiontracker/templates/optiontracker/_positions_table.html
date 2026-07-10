@@ -159,8 +159,7 @@
               </button>
             </div>
             <dialog class="app-dialog roll-finder-dialog" id="roll-dialog-{{ row.trade.pk }}"
-                    {% if entry.roll_leg %}data-roll-url="{% url 'optiontracker:roll-finder' row.trade.pk entry.roll_leg.instrument.pk %}?side={{ entry.roll_leg.side }}"{% endif %}>
-              {% if entry.roll_leg %}
+                    data-roll-url="{% url 'optiontracker:roll-finder' row.trade.pk %}">
               <div class="roll-finder-body">
                 <div class="dialog-head">
                   <h3>Roll Selection for {{ row.underlying.code }}</h3>
@@ -168,18 +167,6 @@
                 </div>
                 <p class="muted">Loading roll candidates…</p>
               </div>
-              {% else %}
-              <div class="roll-finder-body loaded">
-                <div class="dialog-head">
-                  <h3>Roll Selection</h3>
-                  <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
-                </div>
-                <p class="muted">Roll candidates unavailable for this position.</p>
-                <div class="dialog-actions">
-                  <button type="button" class="btn dialog-close">Close</button>
-                </div>
-              </div>
-              {% endif %}
             </dialog>
             <table class="legs-table">
               <thead>

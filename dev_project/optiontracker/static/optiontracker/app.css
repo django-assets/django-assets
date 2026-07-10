@@ -881,9 +881,35 @@ dialog.app-dialog.tour-open {
   z-index: 1150;
 }
 
-/* Roll Selection finder dialog: candidate rows toggle a selection;
-   its body is loaded from reports.roll_candidates() on first open. */
-.roll-finder-dialog { width: 700px; max-width: 94vw; }
+/* Roll Selection finder dialog: candidate rows (prior closed trades from
+   reports.roll_link_candidates()) toggle a selection; its body is loaded
+   on first open. */
+.roll-finder-dialog { width: 760px; max-width: 94vw; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.roll-head { justify-content: flex-start; }
+.roll-head h3 { flex: 1; }
+.roll-lookback { font-size: 12.5px; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.roll-lookback select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-2);
+  color: var(--text);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+.roll-lookback select option { background: var(--card); color: var(--text); }
 .roll-current {
   margin-top: 14px;
   padding: 12px 14px;
@@ -891,18 +917,40 @@ dialog.app-dialog.tour-open {
   border-radius: 10px;
   background: var(--bg-soft, rgba(127, 127, 127, 0.06));
 }
-.roll-current-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-.roll-current-grid { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 8px; font-size: 13px; }
+.roll-current-title { font-size: 13.5px; font-weight: 700; }
+.roll-current-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 26px;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.roll-stack { display: grid; gap: 4px; align-content: start; }
+.roll-current-strategy { font-weight: 600; }
+.roll-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 26px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--bg-soft, rgba(127, 127, 127, 0.06));
+  font-size: 13px;
+}
+.roll-totals > span { flex: 1; white-space: nowrap; }
+.roll-totals strong { font-weight: 700; }
 .roll-found { font-size: 12.5px; }
 .roll-candidates-table tbody tr { cursor: pointer; }
 .roll-candidates-table tbody tr:hover td { background: rgba(127, 127, 127, 0.08); }
-.roll-candidate input[type="checkbox"] { pointer-events: none; accent-color: var(--accent); }
+.roll-candidates-table input[type="checkbox"] { accent-color: var(--accent); }
+.roll-candidate input[type="checkbox"] { pointer-events: none; }
 .roll-candidate.selected td { background: rgba(91, 108, 255, 0.14); }
 .roll-candidate.selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .roll-check-col, .roll-check-cell { width: 30px; }
+.roll-expand-col, .roll-expand-cell { width: 26px; }
 .roll-foot { align-items: center; }
-.roll-total-wrap { flex: 1; font-size: 13px; }
-.roll-total-wrap .roll-total { color: var(--text); }
 
 /* Calendar month-detail dialog: every figure server-rendered from
    reports.month_detail(); the bar chart is SVG pixel geometry. */
@@ -926,8 +974,36 @@ dialog.app-dialog.tour-open {
 .month-stat-sub { font-size: 12.5px; margin-top: 4px; }
 .month-stat-divider { border-top: 1px solid var(--border-soft); margin: 10px 0 6px; }
 .month-daily-chart { width: 100%; height: auto; margin-top: 8px; }
+.month-stat-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-soft, rgba(127, 127, 127, 0.08));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
 .month-transactions { margin-top: 16px; }
+.month-tx-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .month-tx-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+.month-detail-foot {
+  display: flex;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+}
+.month-powered {
+  flex: 1;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  color: var(--muted);
+}
+.month-detail-foot .btn { font-size: 13px; }
 
 /* TradingView split: the embedded chart panel opens beside the positions
    card (client-side toggle only; the card reflows narrower). */

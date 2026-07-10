@@ -230,6 +230,11 @@ class Command(BaseCommand):
             self._closed_history(symbol, side=side, contracts=contracts, days_ago=day, kind=kind)
             day += random.randint(4, 11)
         self._assigned_history("CONL")
+        # Two recent closed OSCR covered calls so the OSCR wheel's live
+        # covered call has real roll-link candidates within the 60-day
+        # lookback (the tutorial's Roll Selection step needs ≥2).
+        self._closed_history("OSCR", side="call", contracts=3, days_ago=28)
+        self._closed_history("OSCR", side="call", contracts=3, days_ago=44)
 
     def _assigned_history(self, symbol: str) -> None:
         """One CSP that ended in ASSIGNMENT: the option closes to zero

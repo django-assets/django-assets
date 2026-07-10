@@ -6,7 +6,7 @@ app_name = "optiontracker"
 
 urlpatterns = [
     path("", views.option_positions, name="positions"),
-    path("positions/<int:trade_pk>/<int:leg_pk>/rolls/", views.roll_finder, name="roll-finder"),
+    path("positions/<int:trade_pk>/rolls/", views.roll_finder, name="roll-finder"),
     path("wheel/", views.wheel, name="wheel"),
     path("equities/", views.equities, name="equities"),
     path("analytics/", views.analytics, name="analytics"),

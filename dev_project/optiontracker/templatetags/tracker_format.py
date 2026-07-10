@@ -35,6 +35,10 @@ STRATEGY_LABELS = {
 
 RIGHT_LABELS = {"C": "Call", "P": "Put"}
 
+#: Leg side -> reference transaction ACTION label (pure label mapping):
+#: a short leg was sold to open, a long leg was bought.
+ACTION_LABELS = {"short": "Sell", "long": "Buy"}
+
 #: Debit structures label their opening cash "Cost Basis" (reference behavior).
 DEBIT_STRATEGIES = {"long_call", "long_put", "bear_put_spread", "bull_call_spread"}
 
@@ -84,17 +88,6 @@ def money_abs(value: object) -> str:
     if value is None:
         return EM_DASH
     return f"${abs(Decimal(str(value))):,.2f}"
-
-
-@register.filter
-def contract_total(price: object, contracts: object) -> str:
-    """Per-contract price -> position dollars: price × contracts × 100
-    (the option multiplier), rendered as money. Display scaling of a
-    finished library figure (RollFinder.current_price), same spirit as
-    the ratio->percent filters."""
-    if price is None or contracts is None:
-        return EM_DASH
-    return money(Decimal(str(price)) * Decimal(str(contracts)) * 100)
 
 
 @register.filter
@@ -234,6 +227,13 @@ def side_label(side: str | None) -> str:
     if side is None:
         return EM_DASH
     return side.capitalize()
+
+
+@register.filter
+def action_label(side: str | None) -> str:
+    if side is None:
+        return EM_DASH
+    return ACTION_LABELS.get(side, side.capitalize())
 
 
 @register.filter

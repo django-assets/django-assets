@@ -15,7 +15,6 @@ from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
 
 from dev_project.optiontracker import services
-from django_assets.core.models import Instrument
 from django_assets.trades import reports
 from django_assets.trades.models import Trade
 
@@ -53,6 +52,9 @@ POSITION_SORTS = {
     "delta": "delta_pct",
     "moneyness": "moneyness_pct",
 }
+
+#: Roll Selection finder lookback windows (reference select: 30/60/90 days).
+ROLL_LOOKBACKS = (30, 60, 90)
 
 
 def _parse_date(raw: str | None) -> datetime.date | None:
@@ -202,16 +204,11 @@ def option_positions(request: HttpRequest) -> HttpResponse:
 
     entries = []
     for row in rows:
-        legs = sorted(row.legs, key=_leg_display_order)
-        # The Roll Selection target: the strategy's short leg (the one a
-        # roll buys back), falling back to the first leg. Pure selection.
-        short_legs = [leg for leg in legs if leg.side == "short"]
         entries.append(
             {
                 "row": row,
                 "underlying_price": _underlying_price(row),
-                "legs": legs,
-                "roll_leg": (short_legs or legs)[0] if legs else None,
+                "legs": sorted(row.legs, key=_leg_display_order),
             }
         )
     context.update(
@@ -235,19 +232,42 @@ def option_positions(request: HttpRequest) -> HttpResponse:
     return render(request, "optiontracker/positions.html", context)
 
 
-def roll_finder(request: HttpRequest, trade_pk: int, leg_pk: int) -> HttpResponse:
-    """The Roll Selection dialog body: live roll candidates for one open
-    short leg, straight from reports.roll_candidates(). This is a metered
-    chain read — it is only ever requested from the dialog-open click,
-    never on page load."""
+def roll_finder(request: HttpRequest, trade_pk: int) -> HttpResponse:
+    """The Roll Selection dialog body: PRIOR closed trades on the same
+    underlying that this open position could be linked to as a roll,
+    straight from reports.roll_link_candidates(). Pure ledger data (no
+    metered chain read), but still fetched on dialog open — never on page
+    load — to keep the positions rows light."""
     user = services.demo_user()
     trade = get_object_or_404(Trade, pk=trade_pk, user=user)
-    leg_instrument = get_object_or_404(Instrument, pk=leg_pk)
-    finder = reports.roll_candidates(
-        trade, leg_instrument, services.price_source(), services.chain_source()
+    try:
+        lookback = int(request.GET.get("lookback", "60"))
+    except ValueError:
+        lookback = 60
+    if lookback not in ROLL_LOOKBACKS:
+        lookback = 60
+    link = reports.roll_link_candidates(
+        user, trade, services.price_source(), lookback_days=lookback
     )
-    side = "long" if request.GET.get("side") == "long" else "short"
-    return render(request, "optiontracker/_roll_finder.html", {"finder": finder, "side": side})
+    # The dialog title's CALL/PUT + SHORT/LONG come from the open row's
+    # primary leg (the same legs[0] whose strike RollLink reports).
+    leg = None
+    if link is not None:
+        current = next(
+            (
+                row
+                for row in reports.open_option_strategies(user, services.price_source())
+                if row.trade == trade
+            ),
+            None,
+        )
+        if current is not None and current.legs:
+            leg = current.legs[0]
+    return render(
+        request,
+        "optiontracker/_roll_finder.html",
+        {"link": link, "leg": leg, "lookbacks": ROLL_LOOKBACKS},
+    )
 
 
 def wheel(request: HttpRequest) -> HttpResponse:
