@@ -60,14 +60,29 @@ class DateRange:
 @dataclass(frozen=True)
 class PriceCapabilities:
     """A source's honest, entitlement-derived answer for one instrument
-    (ADR-0039 §3). `greeks` reports whether option quotes carry the
-    OptionQuote greek fields."""
+    (ADR-0039 §3, amended at acceptance). Two archival bounds because
+    real vendors decouple them — options have dated EOD closes but no
+    bar archive: `closes` governs get_close, `ohlcv` governs get_ohlcv,
+    and `ohlcv` never exceeds `closes` (a source that can chart a
+    session can answer its close). `greeks` reports whether option
+    quotes carry the OptionQuote greek fields."""
 
     realtime: bool
     delayed: bool
     eod: bool
-    historical: DateRange | None
+    closes: DateRange | None
+    ohlcv: DateRange | None = None
     greeks: bool = False
+
+    def __post_init__(self) -> None:
+        if self.ohlcv is not None:
+            if self.closes is None or not (
+                self.ohlcv.min in self.closes and self.ohlcv.max in self.closes
+            ):
+                raise ValueError(
+                    "ohlcv bound must lie within the closes bound — a source that "
+                    "can chart a session must be able to answer its close"
+                )
 
 
 @dataclass(frozen=True)
@@ -257,7 +272,7 @@ class StaticPriceSource:
     def capabilities(self, instrument: Instrument) -> PriceCapabilities | None:
         if instrument not in self._prices or instrument.price_currency is None:
             return None
-        return PriceCapabilities(realtime=False, delayed=False, eod=True, historical=None)
+        return PriceCapabilities(realtime=False, delayed=False, eod=True, closes=None)
 
     def get_quote(
         self, instrument: Instrument, *, kind: PriceKind | None = None
@@ -347,7 +362,7 @@ class CSVPriceSource:
         bound = self._bound(instrument)
         if bound is None:
             return None
-        return PriceCapabilities(realtime=False, delayed=False, eod=True, historical=bound)
+        return PriceCapabilities(realtime=False, delayed=False, eod=True, closes=bound, ohlcv=bound)
 
     @staticmethod
     def _session_as_of(session: datetime.date) -> datetime.datetime:

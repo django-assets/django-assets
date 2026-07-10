@@ -52,7 +52,9 @@ def test_capabilities_derived_from_data(source, aapl, usd):
     caps = source.capabilities(aapl)
     assert caps is not None
     assert (caps.realtime, caps.delayed, caps.eod) == (False, False, True)
-    assert caps.historical == DateRange(datetime.date(2025, 12, 29), datetime.date(2026, 1, 6))
+    bound = DateRange(datetime.date(2025, 12, 29), datetime.date(2026, 1, 6))
+    assert caps.closes == bound
+    assert caps.ohlcv == bound
     assert source.capabilities(usd) is None
 
 

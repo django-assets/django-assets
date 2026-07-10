@@ -179,17 +179,37 @@ def test_ohlcv_series_shape(aapl, usd):
 
 
 def test_capabilities_shape():
-    caps = PriceCapabilities(realtime=False, delayed=True, eod=True, historical=None)
+    caps = PriceCapabilities(realtime=False, delayed=True, eod=True, closes=None)
     assert caps.delayed is True
-    assert caps.historical is None
+    assert caps.closes is None
+    assert caps.ohlcv is None
     assert caps.greeks is False  # default: no greeks surface
 
 
 def test_capabilities_with_history_and_greeks():
     bound = DateRange(datetime.date(2020, 1, 2), datetime.date(2026, 7, 8))
-    caps = PriceCapabilities(realtime=True, delayed=True, eod=True, historical=bound, greeks=True)
-    assert caps.historical == bound
+    caps = PriceCapabilities(
+        realtime=True, delayed=True, eod=True, closes=bound, ohlcv=bound, greeks=True
+    )
+    assert caps.closes == bound
+    assert caps.ohlcv == bound
     assert caps.greeks is True
+
+
+def test_capabilities_closes_without_bars_is_legal():
+    # Real case: options have dated EOD closes but no bar archive.
+    bound = DateRange(datetime.date(2025, 7, 10), datetime.date(2026, 7, 8))
+    caps = PriceCapabilities(realtime=False, delayed=True, eod=True, closes=bound)
+    assert caps.ohlcv is None
+
+
+def test_capabilities_bars_must_lie_within_closes():
+    closes = DateRange(datetime.date(2024, 1, 2), datetime.date(2026, 1, 2))
+    wider = DateRange(datetime.date(2020, 1, 2), datetime.date(2026, 1, 2))
+    with pytest.raises(ValueError):
+        PriceCapabilities(realtime=False, delayed=False, eod=True, closes=closes, ohlcv=wider)
+    with pytest.raises(ValueError):
+        PriceCapabilities(realtime=False, delayed=False, eod=True, closes=None, ohlcv=closes)
 
 
 # -- OptionQuote ------------------------------------------------------------

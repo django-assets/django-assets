@@ -80,7 +80,7 @@ class PriceSourceConformance:
     ) -> None:
         caps = source.capabilities(priced)
         assert isinstance(caps, PriceCapabilities)
-        assert caps.realtime or caps.delayed or caps.eod or caps.historical is not None, (
+        assert caps.realtime or caps.delayed or caps.eod or caps.closes is not None, (
             "a priced instrument must have at least one capability"
         )
 
@@ -172,8 +172,13 @@ class PriceSourceConformance:
     def test_history_honesty(self, source: PriceSource, priced: Instrument) -> None:
         caps = source.capabilities(priced)
         assert caps is not None
-        if caps.historical is None:
+        if caps.closes is None:
             assert source.get_close(priced, on=datetime.date(2020, 6, 1)) is None
+        else:
+            # Out-of-bounds closes: None, never interpolated.
+            assert source.get_close(priced, on=caps.closes.min - datetime.timedelta(days=1)) is None
+            assert source.get_close(priced, on=caps.closes.max + datetime.timedelta(days=1)) is None
+        if caps.ohlcv is None:
             assert (
                 source.get_ohlcv(
                     priced, start=datetime.date(2020, 1, 1), end=datetime.date(2020, 12, 31)
@@ -181,10 +186,7 @@ class PriceSourceConformance:
                 is None
             )
             return
-        bound = caps.historical
-        # Out-of-bounds closes: None, never interpolated.
-        assert source.get_close(priced, on=bound.min - datetime.timedelta(days=1)) is None
-        assert source.get_close(priced, on=bound.max + datetime.timedelta(days=1)) is None
+        bound = caps.ohlcv
         # A series wider than the bound comes back clipped to it.
         series = source.get_ohlcv(
             priced,
@@ -207,9 +209,9 @@ class PriceSourceConformance:
     def test_close_matches_daily_candle(self, source: PriceSource, priced: Instrument) -> None:
         caps = source.capabilities(priced)
         assert caps is not None
-        if caps.historical is None:
-            pytest.skip("no historical capability")
-        bound = caps.historical
+        if caps.ohlcv is None:
+            pytest.skip("no ohlcv capability")
+        bound = caps.ohlcv
         start = max(bound.min, bound.max - datetime.timedelta(days=_AGGREGATION_WINDOW_DAYS))
         series = source.get_ohlcv(priced, start=start, end=bound.max)
         assert series is not None
@@ -226,9 +228,9 @@ class PriceSourceConformance:
     ) -> None:
         caps = source.capabilities(priced)
         assert caps is not None
-        if caps.historical is None:
-            pytest.skip("no historical capability")
-        bound = caps.historical
+        if caps.ohlcv is None:
+            pytest.skip("no ohlcv capability")
+        bound = caps.ohlcv
         start = max(bound.min, bound.max - datetime.timedelta(days=_AGGREGATION_WINDOW_DAYS))
         daily = source.get_ohlcv(priced, start=start, end=bound.max)
         assert daily is not None

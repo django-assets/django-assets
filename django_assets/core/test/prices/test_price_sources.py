@@ -55,7 +55,8 @@ def test_static_source_capabilities_are_honest(aapl, usd):
     caps = source.capabilities(aapl)
     assert caps is not None
     assert (caps.realtime, caps.delayed, caps.eod) == (False, False, True)
-    assert caps.historical is None
+    assert caps.closes is None
+    assert caps.ohlcv is None
     assert caps.greeks is False
     assert source.capabilities(usd) is None  # unknown instrument: unpriceable
 
@@ -107,7 +108,7 @@ class Counting:
         self.calls.append(("capabilities", instrument))
         from django_assets.core.prices import PriceCapabilities
 
-        return PriceCapabilities(realtime=True, delayed=False, eod=True, historical=None)
+        return PriceCapabilities(realtime=True, delayed=False, eod=True, closes=None)
 
     def get_quote(self, instrument, *, kind=None):
         self.calls.append(("get_quote", instrument, kind))
