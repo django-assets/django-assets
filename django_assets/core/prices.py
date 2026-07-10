@@ -75,14 +75,15 @@ class PriceCapabilities:
     greeks: bool = False
 
     def __post_init__(self) -> None:
-        if self.ohlcv is not None:
-            if self.closes is None or not (
-                self.ohlcv.min in self.closes and self.ohlcv.max in self.closes
-            ):
-                raise ValueError(
-                    "ohlcv bound must lie within the closes bound — a source that "
-                    "can chart a session must be able to answer its close"
-                )
+        if self.ohlcv is not None and (
+            self.closes is None
+            or self.ohlcv.min not in self.closes
+            or self.ohlcv.max not in self.closes
+        ):
+            raise ValueError(
+                "ohlcv bound must lie within the closes bound — a source that "
+                "can chart a session must be able to answer its close"
+            )
 
 
 @dataclass(frozen=True)
