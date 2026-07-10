@@ -1,0 +1,39 @@
+{% load tracker_format %}
+<section class="card summary-card" id="account-summary">
+  <div class="summary-head">
+    <h2>Account Summary</h2>
+    <button type="button" class="icon-btn summary-toggle" aria-label="Collapse account summary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 15l-6-6-6 6"/></svg>
+    </button>
+  </div>
+  <div class="summary-body">
+    <div class="summary-item">
+      <span class="summary-label">Total Value</span>
+      <span class="summary-value">{{ summary.total_value|money }}{% if summary.total_return_pct is not None %} <span class="summary-return {{ summary.total_return_pct|sign_class }}">({{ summary.total_return_pct|pct1 }})</span>{% endif %}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Options Position</span>
+      <span class="summary-value">{{ summary.options_value|money }}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Equity Position</span>
+      <span class="summary-value">{{ summary.equity_value|money }}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Cash</span>
+      <span class="summary-value">{{ summary.cash|money }}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Option Margin (Est.)</span>
+      <span class="summary-value">{{ summary.margin_estimate|money }}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Options PnL</span>
+      <span class="summary-value {{ summary.options_pnl|sign_class }}">{{ summary.options_pnl|money }}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Equity PnL</span>
+      <span class="summary-value {{ summary.equity_pnl|sign_class }}">{{ summary.equity_pnl|money }}</span>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,19 @@
+{% extends "optiontracker/base.html" %}
+{% block title %}Brokerage Connection — OptionTracker{% endblock %}
+{% block content %}
+<section class="card page-card">
+  <div class="page-head">
+    <h1>Brokerage Connection</h1>
+    <p class="page-desc">This is a demo environment running on seeded data — broker connections are not available in demo mode.</p>
+  </div>
+  <div class="broker-grid">
+    {% for name, initials, coming_soon in brokers %}
+    <div class="broker-tile {% if coming_soon %}coming-soon{% endif %}">
+      <div class="broker-logo broker-logo-{{ forloop.counter }}">{{ initials }}</div>
+      <div class="broker-name">{{ name }}</div>
+      {% if coming_soon %}<div class="broker-soon">(coming soon)</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

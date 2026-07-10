@@ -1,0 +1,48 @@
+{% extends "optiontracker/base.html" %}
+{% load tracker_format %}
+{% block title %}Cumulative Analytics — OptionTracker{% endblock %}
+{% block content %}
+<section class="card page-card">
+  <div class="page-head">
+    <h1>Cumulative Analytics <span class="badge-demo">Demo data</span></h1>
+    <p class="page-desc">Total portfolio analysis over time, including current open positions</p>
+  </div>
+
+  <form id="analytics-filters" class="filter-row" autocomplete="off" onsubmit="return false">
+    <div class="dropdown">
+      <button type="button" class="btn dropdown-toggle" data-dropdown="analytics-strategy-menu">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></svg>
+        Strategy
+      </button>
+      <div class="dropdown-menu" id="analytics-strategy-menu" hidden>
+        <div class="dropdown-title">Filter by strategy</div>
+        {% for slug in strategy_options %}
+        <label class="dropdown-check">
+          <input type="checkbox" name="strategy" value="{{ slug }}"
+                 {% if slug in selected_strategies %}checked{% endif %}
+                 hx-get="{% url 'optiontracker:analytics' %}"
+                 hx-trigger="change"
+                 hx-target="#analytics-body" hx-swap="outerHTML"
+                 hx-include="#analytics-filters" hx-push-url="true">
+          {{ slug|strategy_label }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <label class="select-box">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+      <select name="range"
+              hx-get="{% url 'optiontracker:analytics' %}"
+              hx-trigger="change"
+              hx-target="#analytics-body" hx-swap="outerHTML"
+              hx-include="#analytics-filters" hx-push-url="true">
+        {% for code, label in date_ranges %}
+        <option value="{{ code }}" {% if code == range_code %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+
+  {% include "optiontracker/_analytics_body.html" %}
+</section>
+{% endblock %}

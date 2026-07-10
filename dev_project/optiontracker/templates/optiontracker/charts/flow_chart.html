@@ -1,0 +1,17 @@
+{# Chart include — ALLOWED arithmetic zone (pixel geometry from tracker_charts). #}
+{% load tracker_format %}
+{% if empty %}
+<p class="empty-row">No finalized trades yet.</p>
+{% else %}
+<div class="chart-scroll">
+  <svg class="chart flow-chart" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="PnL flow: symbols to put/call to gain/loss">
+    {% for ribbon in ribbons %}
+    <path class="flow-ribbon {{ ribbon.css }}" d="{{ ribbon.d }}"/>
+    {% endfor %}
+    {% for node in nodes %}
+    <rect class="flow-node {{ node.css }}" x="{{ node.x }}" y="{{ node.y }}" width="{{ node.w }}" height="{{ node.h }}" rx="3"/>
+    <text class="flow-label" x="{{ node.label_x }}" y="{{ node.label_y }}" text-anchor="{{ node.anchor }}">{{ node.label }} {{ node.amount|money0 }} · {{ node.share|pct2 }}</text>
+    {% endfor %}
+  </svg>
+</div>
+{% endif %}

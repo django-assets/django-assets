@@ -1,0 +1,62 @@
+{% load tracker_format %}
+{% if is_htmx %}
+<div class="history-totals" id="history-totals" hx-swap-oob="true">
+  <div>Total Strategies: <strong>{{ total_strategies }}</strong></div>
+  <div>Total Realized PnL: <strong class="{{ stats.total_profit|sign_class }}">{{ stats.total_profit|money_signed }}</strong></div>
+</div>
+{% endif %}
+<div id="history-table" class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Symbol</th>
+        <th>Type (Contracts)</th>
+        <th>Expiry</th>
+        <th>Trade Date</th>
+        <th class="num">Initial Premium</th>
+        <th class="num">Realized PnL</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr class="pos-row expandable" tabindex="0">
+        <td class="sym-cell">
+          <svg class="row-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+          <span class="sym-text"><span class="sym-link">{{ row.underlying.code|default:"—" }}</span></span>
+        </td>
+        <td>{{ row.strategy|strategy_label }} ({{ row.contracts }})</td>
+        <td>{{ row.expiration|date:"Y-m-d"|default:"—" }}</td>
+        <td>{{ row.opened_on|date:"m/d/Y" }}-{{ row.closed_on|date:"m/d/Y" }}</td>
+        <td class="num">{{ row.initial_premium|money }}</td>
+        <td class="num {{ row.net_profit|sign_class }}">{{ row.net_profit|money }}</td>
+      </tr>
+      <tr class="detail-row" hidden>
+        <td colspan="6">
+          <div class="detail-panel">
+            <table class="legs-table">
+              <thead>
+                <tr><th>Call / Put</th><th>Side</th><th class="num">Strike Price</th><th class="num">Open Price</th><th class="num">Close Price</th><th>Close Status</th><th class="num">Fees</th></tr>
+              </thead>
+              <tbody>
+                {% for leg in row.legs %}
+                <tr>
+                  <td class="lower">{{ leg.right|right_label|lower }}</td>
+                  <td>{{ leg.side|side_label }}</td>
+                  <td class="num">{{ leg.strike|plain_number }}</td>
+                  <td class="num">{{ leg.open_price|money }}</td>
+                  <td class="num">{{ leg.close_price|money }}</td>
+                  <td>Closed ({{ leg.contracts|floatformat:"0" }}, {{ leg.closed_on|date:"n/j/Y" }})</td>
+                  <td class="num">{{ leg.fees|money }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" class="empty-row">No closed strategies match the current filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

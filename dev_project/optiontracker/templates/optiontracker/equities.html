@@ -1,0 +1,41 @@
+{% extends "optiontracker/base.html" %}
+{% load tracker_format %}
+{% block title %}Equity Positions — OptionTracker{% endblock %}
+{% block content %}
+<section class="card page-card">
+  <div class="page-head">
+    <h1>Equity Positions <span class="badge-demo">Demo data</span></h1>
+    <p class="page-desc">Share positions held in your accounts.</p>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th class="num">Shares</th>
+          <th class="num">Market Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in entries %}
+        {% with campaign=entry.campaign %}
+        <tr>
+          <td class="sym-cell">
+            <span class="sym-avatar">{{ campaign.underlying.code|slice:":1" }}</span>
+            <span class="sym-text">
+              <a class="sym-link" href="https://www.tradingview.com/chart/?symbol={{ campaign.underlying.code|urlencode }}" target="_blank" rel="noopener">{{ campaign.underlying.code }}</a>
+              {% if entry.quote %}<span class="sym-price">({{ entry.quote.price|money }})</span>{% endif %}
+            </span>
+          </td>
+          <td class="num">{{ campaign.shares|floatformat:"0" }}</td>
+          <td class="num">{{ campaign.market_value|money }}</td>
+        </tr>
+        {% endwith %}
+        {% empty %}
+        <tr><td colspan="3" class="empty-row">No equity positions.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

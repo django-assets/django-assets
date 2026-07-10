@@ -1,0 +1,131 @@
+{% load tracker_format %}
+{% if is_htmx %}<span id="pos-count" hx-swap-oob="true">({{ count }})</span>{% endif %}
+<div id="positions-table" class="table-wrap">
+  <table class="data-table positions-table">
+    <thead>
+      <tr>
+        <th class="sortable{% if sort_state.symbol.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.symbol.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.symbol.url }}">Symbol <span class="sort-arrow">{% if sort_state.symbol.active %}{% if sort_state.symbol.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
+        <th>Type (Contracts)</th>
+        <th class="sortable{% if sort_state.expiration.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.expiration.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.expiration.url }}">Expiration <span class="sort-arrow">{% if sort_state.expiration.active %}{% if sort_state.expiration.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
+        <th class="sortable num{% if sort_state.pnl.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.pnl.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.pnl.url }}">PnL (%) <span class="sort-arrow">{% if sort_state.pnl.active %}{% if sort_state.pnl.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
+        <th class="sortable num{% if sort_state.market_value.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.market_value.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.market_value.url }}">Market Value <span class="sort-arrow">{% if sort_state.market_value.active %}{% if sort_state.market_value.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
+        <th class="sortable num{% if sort_state.delta.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.delta.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.delta.url }}">Delta (%) <span class="sort-arrow">{% if sort_state.delta.active %}{% if sort_state.delta.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
+        <th class="sortable num{% if sort_state.moneyness.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.moneyness.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.moneyness.url }}">Moneyness <span class="sort-arrow">{% if sort_state.moneyness.active %}{% if sort_state.moneyness.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
+        <th class="num">Share</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in entries %}
+      {% with row=entry.row %}
+      <tr class="pos-row expandable" tabindex="0">
+        <td class="sym-cell">
+          <svg class="row-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+          <span class="sym-avatar">{{ row.underlying.code|slice:":1" }}</span>
+          <span class="sym-text">
+            <a class="sym-link" href="https://www.tradingview.com/chart/?symbol={{ row.underlying.code|urlencode }}" target="_blank" rel="noopener" title="Open {{ row.underlying.code }} on TradingView">{{ row.underlying.code }}</a>
+            {% if entry.underlying_price is not None %}<span class="sym-price">({{ entry.underlying_price|plain_number }})</span>{% endif %}
+          </span>
+        </td>
+        <td>{{ row.strategy|strategy_label }} ({{ row.contracts }})</td>
+        <td>
+          {% if row.expiration %}
+            {% with days=row.expiration|days_until %}
+            {{ row.expiration|date:"Y-m-d" }} <span class="{% if days <= 1 %}neg{% else %}muted{% endif %}">({{ days }}d)</span>
+            {% endwith %}
+          {% else %}&mdash;{% endif %}
+        </td>
+        <td class="num {{ row.pnl_pct|sign_class }}">{{ row.pnl_pct|pct0 }}</td>
+        <td class="num">{{ row.market_value|money }}</td>
+        <td class="num">{{ row.delta_pct|pct1 }}</td>
+        <td class="num">
+          {% if row.moneyness_pct is not None %}{{ row.moneyness_pct|pct0 }}{% else %}&mdash;{% endif %}
+          {% if row.moneyness %}<span class="{% if row.moneyness == 'ITM' %}neg{% else %}pos{% endif %}">({{ row.moneyness }})</span>{% endif %}
+        </td>
+        <td class="num">
+          <button type="button" class="icon-btn share-btn" title="Copy position summary"
+                  data-share="{{ row.underlying.code }} {{ row.strategy|strategy_label }} ({{ row.contracts }}) exp {{ row.expiration|date:'Y-m-d' }} | PnL {{ row.pnl_pct|pct0 }} | Market Value {{ row.market_value|money }} | Delta {{ row.delta_pct|pct1 }} | {{ row.moneyness_pct|pct0 }} ({{ row.moneyness }})">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+          </button>
+        </td>
+      </tr>
+      <tr class="detail-row" hidden>
+        <td colspan="8">
+          <div class="detail-panel">
+            <div class="detail-meta">
+              <span><span class="muted">Open Date:</span> {{ row.opened_on|date:"Y-m-d" }}</span>
+              {% if row.strategy|is_debit %}
+              <span><span class="muted">Cost Basis:</span> {{ row.initial_premium|money_abs }}</span>
+              {% else %}
+              <span><span class="muted">Initial Premium:</span> {{ row.initial_premium|money }}</span>
+              {% endif %}
+              {% if row.rolls %}
+              <span><span class="muted">Premium Incl. Roll:</span> {{ row.premium_incl_rolls|money }}</span>
+              {% endif %}
+              {% if row.aroi_initial is not None or row.aroi_now is not None %}
+              <span><span class="muted">AROI (init/now):</span> {{ row.aroi_initial|pct0 }}/{{ row.aroi_now|pct0 }}</span>
+              {% endif %}
+            </div>
+            <table class="legs-table">
+              <thead>
+                <tr><th>Side / Right</th><th class="num">Strike</th><th class="num">Price</th><th class="num">IV</th><th class="num">Delta</th><th class="num">Gamma</th><th class="num">Theta</th><th class="num">Vega</th></tr>
+              </thead>
+              <tbody>
+                {% for leg in row.legs|dictsortreversed:"side" %}
+                <tr>
+                  <td>{{ leg.side|side_label }} {{ leg.right|right_label }}</td>
+                  <td class="num">{{ leg.strike|money }}</td>
+                  <td class="num">{{ leg.quote.price|money }}</td>
+                  <td class="num">{{ leg.quote.iv|pct2 }}</td>
+                  <td class="num">{{ leg.quote.delta|greek }}</td>
+                  <td class="num">{{ leg.quote.gamma|greek }}</td>
+                  <td class="num">{{ leg.quote.theta|greek }}</td>
+                  <td class="num">{{ leg.quote.vega|greek }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% if row.rolls %}
+            <div class="roll-block">
+              <div class="roll-title">Roll Selections ({{ row.rolls|length }}):</div>
+              <table class="legs-table roll-table">
+                <thead>
+                  <tr><th>Open Date</th><th>Close Date</th><th class="num">Initial Premium</th><th class="num">Realized PnL</th></tr>
+                </thead>
+                <tbody>
+                  {% for roll in row.rolls %}
+                  <tr>
+                    <td>{{ roll.opened_on|date:"M j, Y" }}</td>
+                    <td>{{ roll.closed_on|date:"M j, Y" }}</td>
+                    <td class="num">{{ roll.initial_premium|money }}</td>
+                    <td class="num {{ roll.realized_pnl|sign_class }}">{{ roll.realized_pnl|money }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% endif %}
+            {% if row.unpriced %}
+            <div class="muted small">No live quote for: {% for inst in row.unpriced %}{{ inst.code }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endwith %}
+      {% empty %}
+      <tr><td colspan="8" class="empty-row">No open option positions match the current filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

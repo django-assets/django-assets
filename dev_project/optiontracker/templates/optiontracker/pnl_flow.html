@@ -1,0 +1,26 @@
+{% extends "optiontracker/base.html" %}
+{% load tracker_format tracker_charts %}
+{% block title %}PnL Flow — OptionTracker{% endblock %}
+{% block content %}
+<section class="card page-card">
+  <div class="page-head">
+    <h1>PnL Flow <span class="badge-demo">Demo data</span></h1>
+    <p class="page-desc">Track options PnL flow by symbol, call/put, and outcome. Only finalized trades are included.</p>
+  </div>
+
+  {% if flow.rows %}
+  <div class="chart-card flow-card">
+    {% pnl_flow_chart flow %}
+    <div class="flow-legend">
+      {% for row in flow.rows %}
+      <span class="flow-legend-item {{ row.realized_pnl|sign_class }}">
+        {{ row.underlying.code }} · {{ row.right|right_label }} · {{ row.outcome|capfirst }} — {{ row.realized_pnl|money }}
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <p class="empty-row">No finalized trades yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

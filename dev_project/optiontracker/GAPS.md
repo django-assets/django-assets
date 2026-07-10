@@ -26,3 +26,14 @@ label mapping ("bull_put_spread" → "Put Credit Spread"), percent/money
 formatting, color coding, SVG chart layout, sorting/filter UI state.
 `scripts/check_app_thinness.py` mechanically rejects Decimal arithmetic
 in this app's views/templates.
+
+Post-UI additions (found while building the screens, resolved in the
+library the same day):
+
+| # | Needed by the app | Library had? | Resolution (library) |
+|---|-------------------|--------------|----------------------|
+| 14 | Wheel "Total PnL" headline + per-campaign absolute PnL + adjusted-cost discount % | Per-campaign ratios only | `WheelCampaign.pnl`, `.adjusted_cost_pct`, `wheel_total_pnl()` |
+| 15 | Account Summary total-return percent ("(50.4%)") | No contributions concept | `AccountSummary.contributions` (pure-cash transactions) + `.total_return_pct` |
+| 16 | "Option Profit vs Account Value" chart's account-value line | Nothing | `account_value_series()` — daily cash+positions at session closes, carry-forward marks (documented policy) |
+| 17 | PnL-flow node totals and share-of-total percentages | Per-(symbol,right,outcome) rows only | `FlowSummary` / `pnl_flow_summary()` with `share_of_total()` |
+| 18 | Per-leg fees in history rows | Strategy-level fee total only | `ClosedLeg.fees` (transaction fees pro-rated across touched legs) |
