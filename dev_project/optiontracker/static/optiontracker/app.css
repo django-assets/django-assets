@@ -881,30 +881,53 @@ dialog.app-dialog.tour-open {
   z-index: 1150;
 }
 
-/* Calendar period-summary panel shown during the tour (all values are
-   copied verbatim from the selected calendar cell's rendered markup). */
-.tour-cal-summary {
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 1150;
-  min-width: 340px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 18px 20px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+/* Roll Selection finder dialog: candidate rows toggle a selection;
+   its body is loaded from reports.roll_candidates() on first open. */
+.roll-finder-dialog { width: 700px; max-width: 94vw; }
+.roll-current {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--bg-soft, rgba(127, 127, 127, 0.06));
 }
-.tour-cal-summary h3 { margin: 0 0 12px; font-size: 15px; }
-.tour-cal-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 7px 0;
-  border-top: 1px solid var(--border-soft);
-  font-size: 13px;
+.roll-current-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.roll-current-grid { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 8px; font-size: 13px; }
+.roll-found { font-size: 12.5px; }
+.roll-candidates-table tbody tr { cursor: pointer; }
+.roll-candidates-table tbody tr:hover td { background: rgba(127, 127, 127, 0.08); }
+.roll-candidate input[type="checkbox"] { pointer-events: none; accent-color: var(--accent); }
+.roll-candidate.selected td { background: rgba(91, 108, 255, 0.14); }
+.roll-candidate.selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.roll-check-col, .roll-check-cell { width: 30px; }
+.roll-foot { align-items: center; }
+.roll-total-wrap { flex: 1; font-size: 13px; }
+.roll-total-wrap .roll-total { color: var(--text); }
+
+/* Calendar month-detail dialog: every figure server-rendered from
+   reports.month_detail(); the bar chart is SVG pixel geometry. */
+.month-detail-dialog { width: 640px; max-width: 94vw; max-height: 86vh; overflow-y: auto; }
+.month-grid .month-card[data-month-url] { cursor: pointer; }
+.month-grid .month-card[data-month-url]:hover { background: rgba(127, 127, 127, 0.07); }
+.month-stats {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 14px;
+  margin-top: 14px;
 }
+@media (max-width: 640px) { .month-stats { grid-template-columns: 1fr; } }
+.month-stat-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.month-stat-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-top: 2px; }
+.month-stat-value { font-size: 22px; font-weight: 700; margin: 4px 0 2px; }
+.month-stat-sub { font-size: 12.5px; margin-top: 4px; }
+.month-stat-divider { border-top: 1px solid var(--border-soft); margin: 10px 0 6px; }
+.month-daily-chart { width: 100%; height: auto; margin-top: 8px; }
+.month-transactions { margin-top: 16px; }
+.month-tx-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
 
 /* TradingView split: the embedded chart panel opens beside the positions
    card (client-side toggle only; the card reflows narrower). */

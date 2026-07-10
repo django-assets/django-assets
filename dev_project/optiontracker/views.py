@@ -11,11 +11,13 @@ import calendar as calendar_mod
 import datetime
 from operator import attrgetter
 
-from django.http import HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.http import Http404, HttpRequest, HttpResponse
+from django.shortcuts import get_object_or_404, render
 
 from dev_project.optiontracker import services
+from django_assets.core.models import Instrument
 from django_assets.trades import reports
+from django_assets.trades.models import Trade
 
 #: Date Range menu vocabulary (reference dropdown). "" clears the filter;
 #: "custom" reveals two date inputs + Apply in the menu.
@@ -198,14 +200,20 @@ def option_positions(request: HttpRequest) -> HttpResponse:
             "descending": is_active and descending,
         }
 
-    entries = [
-        {
-            "row": row,
-            "underlying_price": _underlying_price(row),
-            "legs": sorted(row.legs, key=_leg_display_order),
-        }
-        for row in rows
-    ]
+    entries = []
+    for row in rows:
+        legs = sorted(row.legs, key=_leg_display_order)
+        # The Roll Selection target: the strategy's short leg (the one a
+        # roll buys back), falling back to the first leg. Pure selection.
+        short_legs = [leg for leg in legs if leg.side == "short"]
+        entries.append(
+            {
+                "row": row,
+                "underlying_price": _underlying_price(row),
+                "legs": legs,
+                "roll_leg": (short_legs or legs)[0] if legs else None,
+            }
+        )
     context.update(
         {
             "entries": entries,
@@ -225,6 +233,21 @@ def option_positions(request: HttpRequest) -> HttpResponse:
     if request.headers.get("HX-Request"):
         return render(request, "optiontracker/_positions_table.html", context)
     return render(request, "optiontracker/positions.html", context)
+
+
+def roll_finder(request: HttpRequest, trade_pk: int, leg_pk: int) -> HttpResponse:
+    """The Roll Selection dialog body: live roll candidates for one open
+    short leg, straight from reports.roll_candidates(). This is a metered
+    chain read — it is only ever requested from the dialog-open click,
+    never on page load."""
+    user = services.demo_user()
+    trade = get_object_or_404(Trade, pk=trade_pk, user=user)
+    leg_instrument = get_object_or_404(Instrument, pk=leg_pk)
+    finder = reports.roll_candidates(
+        trade, leg_instrument, services.price_source(), services.chain_source()
+    )
+    side = "long" if request.GET.get("side") == "long" else "short"
+    return render(request, "optiontracker/_roll_finder.html", {"finder": finder, "side": side})
 
 
 def wheel(request: HttpRequest) -> HttpResponse:
@@ -445,6 +468,21 @@ def calendar_view(request: HttpRequest) -> HttpResponse:
     if request.headers.get("HX-Request"):
         return render(request, "optiontracker/_calendar_body.html", context)
     return render(request, "optiontracker/calendar.html", context)
+
+
+def calendar_month_detail(request: HttpRequest, year: int, month: int) -> HttpResponse:
+    """The calendar's month-detail dialog body: one month's realized-PnL
+    breakdown, every figure finished by reports.month_detail()."""
+    try:
+        detail_date = datetime.date(year, month, 1)
+    except ValueError as error:
+        raise Http404("no such month") from error
+    detail = reports.month_detail(services.demo_user(), year, month)
+    return render(
+        request,
+        "optiontracker/_month_detail.html",
+        {"detail": detail, "detail_date": detail_date},
+    )
 
 
 def history(request: HttpRequest) -> HttpResponse:

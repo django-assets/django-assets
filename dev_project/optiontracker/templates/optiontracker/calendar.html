@@ -20,5 +20,16 @@
   </form>
 
   {% include "optiontracker/_calendar_body.html" %}
+
+  {# Month-detail dialog: body HTMX-loaded from the clicked month cell's URL (figures from reports.month_detail). #}
+  <dialog class="app-dialog month-detail-dialog" id="month-detail-dialog">
+    <div class="month-detail-body">
+      <div class="dialog-head">
+        <h3>Month Details</h3>
+        <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+      </div>
+      <p class="muted">Loading month details…</p>
+    </div>
+  </dialog>
 </section>
 {% endblock %}

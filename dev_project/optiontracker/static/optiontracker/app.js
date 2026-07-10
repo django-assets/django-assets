@@ -83,13 +83,34 @@
       return;
     }
 
-    // In-page dialogs (roll history, add wheel position): any button
-    // carrying data-dialog opens the named <dialog>; ✕ or backdrop closes.
+    // Roll-candidate rows inside the Roll Selection finder: clicking a
+    // row toggles its selection (client-side only; demo-inert).
+    var candidateRow = event.target.closest("tr.roll-candidate");
+    if (candidateRow) {
+      toggleRollCandidate(candidateRow);
+      return;
+    }
+
+    // Month-view calendar cells: open the month-detail dialog and load
+    // the month's fragment (all figures server-rendered by the library).
+    var monthCell = event.target.closest("[data-month-url]");
+    if (monthCell) {
+      openMonthDetail(monthCell.getAttribute("data-month-url"), false);
+      return;
+    }
+
+    // In-page dialogs (roll finder, share position): any button carrying
+    // data-dialog opens the named <dialog>; ✕ or backdrop closes. Roll
+    // finder dialogs lazy-load their candidates on this first open (the
+    // fetch meters a live option-chain read, so never on page load).
     var dialogButton = event.target.closest("[data-dialog]");
     if (dialogButton) {
       event.stopPropagation();
       var dialog = document.getElementById(dialogButton.getAttribute("data-dialog"));
-      if (dialog && dialog.showModal) dialog.showModal();
+      if (dialog && dialog.showModal) {
+        dialog.showModal();
+        loadRollFinder(dialog);
+      }
       return;
     }
     var dialogClose = event.target.closest(".dialog-close");
@@ -169,6 +190,16 @@
 
   document.addEventListener("keydown", function (event) {
     if (event.key !== "Enter") return;
+    var candidate = event.target.closest && event.target.closest("tr.roll-candidate");
+    if (candidate) {
+      toggleRollCandidate(candidate);
+      return;
+    }
+    var monthCell = event.target.closest && event.target.closest("[data-month-url]");
+    if (monthCell) {
+      openMonthDetail(monthCell.getAttribute("data-month-url"), false);
+      return;
+    }
     var row = event.target.closest && event.target.closest("tr.expandable");
     if (row) {
       var detail = row.nextElementSibling;
@@ -272,6 +303,70 @@
       link.remove();
     };
     image.src = url;
+  }
+
+  // ---- Roll Selection finder ----
+  // The dialog carries data-roll-url; its body fragment is fetched via
+  // htmx only when the dialog is first opened (the server call meters a
+  // live option-chain read). Row selection and the running net-credit
+  // total are pure presentation over the fragment's data-net-credit
+  // attributes; Save Selection is demo-inert (just closes the dialog).
+
+  function loadRollFinder(dialog) {
+    if (!dialog || !dialog.hasAttribute("data-roll-url") || dialog.dataset.rollLoaded) return;
+    var body = dialog.querySelector(".roll-finder-body");
+    if (!body || !window.htmx) return;
+    dialog.dataset.rollLoaded = "1";
+    htmx.ajax("GET", dialog.getAttribute("data-roll-url"), { target: body, swap: "outerHTML" });
+  }
+
+  function formatMoneyJs(value) {
+    var sign = value < 0 ? "-" : "";
+    return (
+      sign +
+      "$" +
+      Math.abs(value).toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    );
+  }
+
+  function toggleRollCandidate(row) {
+    row.classList.toggle("selected");
+    var selected = row.classList.contains("selected");
+    row.setAttribute("aria-checked", selected ? "true" : "false");
+    var box = row.querySelector('input[type="checkbox"]');
+    if (box) box.checked = selected;
+    var dialog = row.closest("dialog");
+    if (!dialog) return;
+    var total = 0;
+    dialog.querySelectorAll("tr.roll-candidate.selected").forEach(function (picked) {
+      total += parseFloat(picked.getAttribute("data-net-credit")) || 0;
+    });
+    var node = dialog.querySelector(".roll-total");
+    if (node) node.textContent = formatMoneyJs(total);
+  }
+
+  // ---- Calendar month-detail dialog ----
+  // Month-view cells carry data-month-url; opening the dialog HTMX-loads
+  // that month's fragment. During the tour the dialog opens non-modally
+  // (dialog.show()) so the tour chrome stays above it.
+
+  function openMonthDetail(url, tour) {
+    var dialog = document.getElementById("month-detail-dialog");
+    if (!dialog || !url) return;
+    if (tour) {
+      if (!dialog.open) dialog.show();
+      dialog.classList.add("tour-open");
+    } else if (dialog.showModal && !dialog.open) {
+      dialog.showModal();
+    }
+    var body = dialog.querySelector(".month-detail-body");
+    if (body && window.htmx) {
+      body.classList.remove("loaded");
+      htmx.ajax("GET", url, { target: body, swap: "outerHTML" });
+    }
   }
 
   // ---- TradingView panel: official embed widgets, client-side only ----
@@ -408,12 +503,24 @@
   // --- step-state helpers (idempotent; used by ensure() when a step is
   // shown, so Previous / reload rebuild the exact UI state a step needs).
 
-  function tourFirstRow() {
-    return document.querySelector("#positions-table tr.expandable");
+  // The tour's roll steps ride the OSCR covered-call row (the reference
+  // tour names OSCR explicitly); fall back to any OSCR row, then to the
+  // first expandable row so the tour still works on reseeded data.
+  function tourRollRow() {
+    var rows = document.querySelectorAll("#positions-table tr.expandable");
+    var oscr = null;
+    for (var i = 0; i < rows.length; i++) {
+      var link = rows[i].querySelector(".sym-link");
+      if (link && link.textContent.trim() === "OSCR") {
+        if (rows[i].textContent.indexOf("Covered Call") !== -1) return rows[i];
+        if (!oscr) oscr = rows[i];
+      }
+    }
+    return oscr || rows[0] || null;
   }
 
   function tourDetailRow() {
-    var row = tourFirstRow();
+    var row = tourRollRow();
     var detail = row && row.nextElementSibling;
     return detail && detail.classList.contains("detail-row") ? detail : null;
   }
@@ -424,7 +531,7 @@
   }
 
   function setTourRowExpanded(expanded) {
-    var row = tourFirstRow();
+    var row = tourRollRow();
     var detail = tourDetailRow();
     if (!row || !detail) return;
     detail.hidden = !expanded;
@@ -439,6 +546,7 @@
       // browser top layer, above the tour spotlight and popover.
       if (!dialog.open) dialog.show();
       dialog.classList.add("tour-open");
+      loadRollFinder(dialog);
     } else {
       dialog.classList.remove("tour-open");
       if (dialog.open) dialog.close();
@@ -460,51 +568,49 @@
     };
   }
 
-  function tourCalCell() {
-    var cells = document.querySelectorAll("#calendar-body .calendar-cell, #calendar-body .month-card");
-    for (var i = 0; i < cells.length; i++) {
-      if (cells[i].querySelector(".calendar-premium, .month-card-premium")) return cells[i];
-    }
-    return cells[0] || null;
+  // Calendar steps: the tour walks the MONTH view (like the reference),
+  // so make sure the Jan–Dec grid is loaded before ringing a month cell.
+  // Issues the same swap the view <select> would (htmx.ajax works even
+  // right after load, before htmx has bound the select's own listener);
+  // a flag on #calendar-body stops repeat requests — the swap replaces
+  // the element, so a fresh body (grid included) starts clean.
+  function ensureMonthView() {
+    if (document.querySelector("#calendar-body .month-grid")) return;
+    var body = document.getElementById("calendar-body");
+    if (!body || body.dataset.tourMonthLoading || !window.htmx) return;
+    body.dataset.tourMonthLoading = "1";
+    var select = body.querySelector('select[name="view"]');
+    if (select) select.value = "month";
+    var params = new URLSearchParams(window.location.search);
+    params.set("view", "month");
+    htmx.ajax("GET", window.location.pathname + "?" + params.toString(), {
+      target: body,
+      swap: "outerHTML",
+    });
   }
 
-  function tourCalCellText(cell, selector) {
-    var node = cell.querySelector(selector);
-    return node ? node.textContent.replace(/\s+/g, " ").trim() : "";
+  // The month cell the tour rings: the first month card with trades.
+  function tourMonthCell() {
+    var cards = document.querySelectorAll("#calendar-body .month-card");
+    for (var i = 0; i < cards.length; i++) {
+      if (cards[i].querySelector(".month-card-trades")) return cards[i];
+    }
+    return cards[0] || null;
   }
 
-  // Period-summary panel for the Calendar steps. Presentation only: every
-  // figure is copied verbatim from the selected cell's server-rendered
-  // markup (and the period label from the calendar view controls).
-  function setTourCalSummaryOpen(open) {
-    var existing = document.querySelector(".tour-cal-summary");
-    if (!open) {
-      if (existing) existing.remove();
-      return;
+  function setTourMonthDialogOpen(open) {
+    var dialog = document.getElementById("month-detail-dialog");
+    if (!dialog) return;
+    if (open) {
+      dialog.classList.add("tour-open");
+      if (!dialog.open) {
+        var cell = tourMonthCell();
+        if (cell) openMonthDetail(cell.getAttribute("data-month-url"), true);
+      }
+    } else {
+      dialog.classList.remove("tour-open");
+      if (dialog.open) dialog.close();
     }
-    if (existing) return;
-    var cell = tourCalCell();
-    if (!cell) return;
-    var day = tourCalCellText(cell, ".calendar-daynum");
-    var monthName = tourCalCellText(cell, ".month-card-name");
-    var monthSelect = document.querySelector('#calendar-body select[name="month"]');
-    var yearSelect = document.querySelector('#calendar-body select[name="year"]');
-    var month = monthSelect && monthSelect.selectedOptions.length ? monthSelect.selectedOptions[0].textContent.trim() : "";
-    var year = yearSelect && yearSelect.selectedOptions.length ? yearSelect.selectedOptions[0].textContent.trim() : "";
-    var label = monthName ? monthName + " " + year : (month + " " + day + ", " + year);
-    var premiumNode = cell.querySelector(".calendar-premium, .month-card-premium");
-    var premium = premiumNode ? premiumNode.textContent.trim() : "";
-    var premiumSign = premiumNode && premiumNode.classList.contains("neg") ? "neg" : "pos";
-    var trades = tourCalCellText(cell, ".calendar-trades, .month-card-trades");
-    var closed = tourCalCellText(cell, ".calendar-closed, .month-card-closed");
-    var panel = document.createElement("div");
-    panel.className = "tour-cal-summary";
-    var html = "<h3>" + esc(label.replace(/\s+/g, " ").trim()) + "</h3>";
-    html += '<div class="tour-cal-row"><span class="muted">Net Premium</span><strong class="' + premiumSign + '">' + esc(premium) + "</strong></div>";
-    if (trades) html += '<div class="tour-cal-row"><span class="muted">Trades</span><strong>' + esc(trades) + "</strong></div>";
-    if (closed) html += '<div class="tour-cal-row"><span class="muted">' + esc(closed.replace(/:.*$/, "")) + "</span><strong>" + esc(closed.replace(/^[^:]*:\s*/, "")) + "</strong></div>";
-    panel.innerHTML = html;
-    document.body.appendChild(panel);
   }
 
   // --- the 23 steps, mirroring the reference tour ---
@@ -576,10 +682,10 @@
     {
       page: "positions",
       target: function () {
-        return tourFirstRow();
+        return tourRollRow();
       },
       title: "Roll Candidates",
-      body: "Click a position row to expand its per-leg details and roll options.",
+      body: "Click on the OSCR row to expand it and reveal position details and roll options.",
       clickThrough: true,
       group: { i: 1, n: 4 },
       ensure: positionsState(false, false, false),
@@ -607,19 +713,30 @@
       target: function () {
         var dialog = tourRollDialog();
         if (!dialog) return null;
-        return dialog.querySelector(".roll-table tbody tr") || dialog;
+        var row = dialog.querySelector("tr.roll-candidate");
+        if (row) return row;
+        // Loaded but no candidates (no chain access): ring the dialog.
+        return dialog.querySelector(".roll-finder-body.loaded") ? dialog : null;
       },
       title: "Roll Candidates",
       body: "Click on the row to select a roll candidate. You can select multiple candidates to combine them into a roll strategy.",
       clickThrough: true,
       group: { i: 3, n: 4 },
       ensure: positionsState(false, true, true),
+      action: function (target) {
+        if (target && target.classList && target.classList.contains("roll-candidate")) {
+          toggleRollCandidate(target);
+        }
+      },
     },
     {
       page: "positions",
       target: function () {
         var dialog = tourRollDialog();
-        return dialog ? dialog.querySelector(".roll-save") : null;
+        if (!dialog) return null;
+        var save = dialog.querySelector(".roll-save");
+        if (save) return save;
+        return dialog.querySelector(".roll-finder-body.loaded") ? dialog : null;
       },
       title: "Roll Candidates",
       body: "Click the Save Selection button to save your roll candidate choices. This will link the selected candidates to your current position.",
@@ -695,36 +812,43 @@
       next: true,
       group: { i: 2, n: 4 },
       ensure: function () {
-        setTourCalSummaryOpen(false);
+        setTourMonthDialogOpen(false);
       },
     },
     {
       page: "calendar",
       target: function () {
-        return tourCalCell();
+        return tourMonthCell();
       },
       title: "Calendar View",
-      body: "Click on the highlighted cell to view a detailed summary of that period, including all trades and their PnL breakdown.",
+      body: "Click on the June cell to view a detailed summary of that month, including all trades and their PnL breakdown.",
       clickThrough: true,
       previous: true,
       group: { i: 3, n: 4 },
       ensure: function () {
-        setTourCalSummaryOpen(false);
+        setTourMonthDialogOpen(false);
+        ensureMonthView();
       },
-      action: function () {
-        setTourCalSummaryOpen(true);
+      action: function (target) {
+        var cell = target && target.getAttribute && target.getAttribute("data-month-url") ? target : tourMonthCell();
+        if (cell) openMonthDetail(cell.getAttribute("data-month-url"), true);
       },
     },
     {
       page: "calendar",
-      target: ".tour-cal-summary",
+      target: function () {
+        var dialog = document.getElementById("month-detail-dialog");
+        if (!dialog || !dialog.open) return null;
+        return dialog.querySelector(".month-detail-body.loaded") ? dialog : null;
+      },
       title: "Calendar View",
-      body: "This dialog shows a detailed breakdown of the selected time period. You can see the net premium, trade count, and closed winners and losers.",
+      body: "This dialog shows a detailed breakdown of the selected time period. You can see total PnL, win ratio, trading days, a daily PnL chart, and all individual trades.",
       previous: true,
       next: true,
       group: { i: 4, n: 4 },
       ensure: function () {
-        setTourCalSummaryOpen(true);
+        ensureMonthView();
+        setTourMonthDialogOpen(true);
       },
     },
     {
@@ -735,7 +859,7 @@
       clickThrough: true,
       group: { i: 1, n: 2 },
       ensure: function () {
-        setTourCalSummaryOpen(false);
+        setTourMonthDialogOpen(false);
       },
     },
     {
@@ -803,7 +927,6 @@
   function endTour() {
     clearTourStep();
     removeTourNodes();
-    setTourCalSummaryOpen(false);
     document.querySelectorAll("dialog.tour-open").forEach(function (dialog) {
       dialog.classList.remove("tour-open");
       if (dialog.open) dialog.close();
@@ -841,7 +964,7 @@
   var TOUR_CHEV_RIGHT =
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
 
-  function showTourStep(index) {
+  function showTourStep(index, attempt) {
     removeTourNodes();
     if (index < 0 || index >= TOUR_STEPS.length) {
       clearTourStep();
@@ -857,6 +980,23 @@
     if (step.ensure) step.ensure();
     var target = resolveTourTarget(step);
     if (!target) {
+      // Async fragments (the roll finder, the month grid, the month
+      // dialog) may still be loading: poll before giving up (generous
+      // budget — a cold quote cache can stall a swap for many seconds),
+      // aborting if the tour was closed meanwhile.
+      var tries = attempt || 0;
+      if (tries < 120) {
+        setTimeout(function () {
+          var saved = null;
+          try {
+            saved = sessionStorage.getItem(TOUR_KEY);
+          } catch (e) {
+            /* ignore */
+          }
+          if (saved === String(index)) showTourStep(index, tries + 1);
+        }, 250);
+        return;
+      }
       clearTourStep();
       return;
     }

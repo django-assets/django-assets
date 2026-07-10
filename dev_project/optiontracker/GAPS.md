@@ -62,3 +62,10 @@ one OPEN performance gap remains):
 | 30 | Header toggles PnL ($) / Extrinsic ($); leg close status | Added this round | `OpenStrategy.pnl_incl_rolls`, `.extrinsic_value`; `ClosedLeg.status` |
 | 31 | **OPEN**: Month view render cost | `premium_months()` re-derives `closed_option_strategies` once per month (12× per render, ~30 s on the demo book) | Needs a single-pass yearly aggregate in the library; `<!-- GAP -->` marker left in `_calendar_body.html` |
 | 32 | Fast dashboard renders | First render is live vendor round-trips (quotes + 180-day candle history + per-instrument bound discovery) | Connector: single wide fetch discovers the bound AND caches the daily archive (no re-fetch for closes/ohlcv/eod), symbol mapping cached per instrument; app: background cache-warmer thread at server boot + 5-min/4-h CachedPriceSource TTLs. Steady-state renders <2s; the analytics 180-day multi-instrument series is the one genuinely heavy cold path, hidden by the warmer. |
+
+Grader round-7 additions (deep reference features surfaced by the tutorial walkthrough, all resolved LIBRARY-side):
+
+| # | Needed by the app | Library had? | Resolution (library) |
+|---|-------------------|--------------|----------------------|
+| 33 | Roll Selection finder — candidate contracts to roll a short option into (later expiries, net credit) | No chain-read surface (ADR-0039 §5a deferred it) | **ADR-0041 OptionChainSource** (OptionContract + get_expirations/get_option_chain), MarketData connector implements it (live-verified); `reports.roll_candidates()` ranks later-dated same-right contracts with net-credit-to-roll |
+| 34 | Calendar month-detail dialog — total/previous PnL, win ratio + overall, avg daily, trading days, daily PnL chart, transactions | Only per-day/per-month aggregates | `reports.month_detail()` |

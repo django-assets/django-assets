@@ -87,6 +87,17 @@ def money_abs(value: object) -> str:
 
 
 @register.filter
+def contract_total(price: object, contracts: object) -> str:
+    """Per-contract price -> position dollars: price × contracts × 100
+    (the option multiplier), rendered as money. Display scaling of a
+    finished library figure (RollFinder.current_price), same spirit as
+    the ratio->percent filters."""
+    if price is None or contracts is None:
+        return EM_DASH
+    return money(Decimal(str(price)) * Decimal(str(contracts)) * 100)
+
+
+@register.filter
 def strike(value: object) -> str:
     """Strike display ONLY: $6200.00 — currency with NO thousand
     separators (reference renders strikes ungrouped)."""

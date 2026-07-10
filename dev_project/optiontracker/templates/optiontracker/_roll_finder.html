@@ -1,0 +1,57 @@
+{% load tracker_format %}
+{# Roll Selection finder dialog body: figures from reports.roll_candidates(); #}
+{# selection totals are summed client-side from data-net-credit (presentation). #}
+<div class="roll-finder-body loaded">
+  {% if finder %}
+  <div class="dialog-head">
+    <h3>Roll Selection for {{ finder.underlying.code }} {{ finder.right|right_label|upper }} {{ side|upper }} {{ finder.current_strike|strike }}</h3>
+    <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+  </div>
+  <div class="roll-current">
+    <div class="roll-current-title">Current Position</div>
+    <div class="roll-current-grid">
+      <span><span class="muted">Strike:</span> {{ finder.current_strike|strike }}</span>
+      <span><span class="muted">Expires:</span> {{ finder.current_expiry|date:"M j, Y" }}</span>
+      <span><span class="muted">Mark:</span> {{ finder.current_price|money }}</span>
+      <span><span class="muted">Buy to Close ({{ finder.contracts|floatformat:0 }}):</span> {{ finder.current_price|contract_total:finder.contracts }}</span>
+    </div>
+  </div>
+  {% if finder.candidates %}
+  <p class="roll-found muted">Found {{ finder.candidates|length }} potential roll candidate{{ finder.candidates|length|pluralize }}. You can select multiple candidates.</p>
+  <table class="legs-table roll-table roll-candidates-table">
+    <thead>
+      <tr><th class="roll-check-col"></th><th>Type/Expiry</th><th class="num">Strike</th><th class="num">Price</th><th class="num">Delta</th><th class="num">Net Credit</th></tr>
+    </thead>
+    <tbody>
+      {% for candidate in finder.candidates %}
+      <tr class="roll-candidate" data-net-credit="{{ candidate.net_credit }}" tabindex="0" role="checkbox" aria-checked="false">
+        <td class="roll-check-cell"><input type="checkbox" tabindex="-1" aria-hidden="true"></td>
+        <td>{{ candidate.right|right_label }} / {{ candidate.expiry|date:"M j, Y" }}</td>
+        <td class="num">{{ candidate.strike|strike }}</td>
+        <td class="num">{{ candidate.price|money }}</td>
+        <td class="num">{{ candidate.delta|greek }}</td>
+        <td class="num {{ candidate.net_credit|sign_class }}">{{ candidate.net_credit|money }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No roll candidates found for this leg.</p>
+  {% endif %}
+  <p class="muted small">This is a demo — saving a selection does not modify the position.</p>
+  <div class="dialog-actions roll-foot">
+    <span class="roll-total-wrap muted">Selected net credit: <strong class="roll-total">$0.00</strong></span>
+    <button type="button" class="btn dialog-close">Cancel</button>
+    <button type="button" class="btn btn-primary roll-save dialog-close">Save Selection</button>
+  </div>
+  {% else %}
+  <div class="dialog-head">
+    <h3>Roll Selection</h3>
+    <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+  </div>
+  <p class="muted">Roll candidates unavailable — the market data source cannot enumerate an option chain for this underlying.</p>
+  <div class="dialog-actions">
+    <button type="button" class="btn dialog-close">Close</button>
+  </div>
+  {% endif %}
+</div>

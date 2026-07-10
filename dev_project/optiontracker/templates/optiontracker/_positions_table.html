@@ -158,35 +158,28 @@
                 {% if row.rolls %}Modify Roll{% else %}Roll Selection{% endif %}
               </button>
             </div>
-            <dialog class="app-dialog" id="roll-dialog-{{ row.trade.pk }}">
-              <div class="dialog-head">
-                <h3>Roll Selections — {{ row.underlying.code }}</h3>
-                <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+            <dialog class="app-dialog roll-finder-dialog" id="roll-dialog-{{ row.trade.pk }}"
+                    {% if entry.roll_leg %}data-roll-url="{% url 'optiontracker:roll-finder' row.trade.pk entry.roll_leg.instrument.pk %}?side={{ entry.roll_leg.side }}"{% endif %}>
+              {% if entry.roll_leg %}
+              <div class="roll-finder-body">
+                <div class="dialog-head">
+                  <h3>Roll Selection for {{ row.underlying.code }}</h3>
+                  <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+                </div>
+                <p class="muted">Loading roll candidates…</p>
               </div>
-              {% if row.rolls %}
-              <table class="legs-table roll-table">
-                <thead>
-                  <tr><th>Open Date</th><th>Close Date</th><th class="num">Initial Premium</th><th class="num">Realized PnL</th></tr>
-                </thead>
-                <tbody>
-                  {% for roll in row.rolls %}
-                  <tr>
-                    <td>{{ roll.opened_on|date:"M j, Y" }}</td>
-                    <td>{{ roll.closed_on|date:"M j, Y" }}</td>
-                    <td class="num">{{ roll.initial_premium|money }}</td>
-                    <td class="num {{ roll.realized_pnl|sign_class }}">{{ roll.realized_pnl|money }}</td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
               {% else %}
-              <p>No roll selections yet.</p>
-              {% endif %}
-              <p class="muted small">This is a demo — roll selections cannot be modified here.</p>
-              <div class="dialog-actions">
-                <button type="button" class="btn dialog-close">Cancel</button>
-                <button type="button" class="btn btn-primary roll-save dialog-close">Save Selection</button>
+              <div class="roll-finder-body loaded">
+                <div class="dialog-head">
+                  <h3>Roll Selection</h3>
+                  <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+                </div>
+                <p class="muted">Roll candidates unavailable for this position.</p>
+                <div class="dialog-actions">
+                  <button type="button" class="btn dialog-close">Close</button>
+                </div>
               </div>
+              {% endif %}
             </dialog>
             <table class="legs-table">
               <thead>

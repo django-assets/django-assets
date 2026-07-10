@@ -1,0 +1,50 @@
+{% load tracker_format tracker_charts %}
+{# Calendar month-detail dialog body: figures from reports.month_detail(); the bar chart is pixel geometry only. #}
+<div class="month-detail-body loaded">
+  <div class="dialog-head">
+    <h3>{{ detail_date|date:"F Y" }}</h3>
+    <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+  </div>
+  <div class="month-stats">
+    <div class="month-stat-card">
+      <div class="month-stat-label">This Month</div>
+      <div class="month-stat-value {{ detail.total_pnl|sign_class }}">{{ detail.total_pnl|money }}</div>
+      <div class="month-stat-sub muted">Previous: <span class="{{ detail.previous_pnl|sign_class }}">{{ detail.previous_pnl|money }}</span></div>
+      <div class="month-stat-sub">Win Ratio: <strong>{{ detail.win_ratio|pct0 }}</strong> <span class="muted">|</span> Overall: <strong>{{ detail.overall_win_ratio|pct0 }}</strong></div>
+      <div class="month-stat-divider"></div>
+      <div class="month-stat-label">Avg Daily PnL</div>
+      <div class="month-stat-value {{ detail.avg_daily_pnl|sign_class }}">{{ detail.avg_daily_pnl|money }}</div>
+      <div class="month-stat-sub muted">Previous: <span class="{{ detail.previous_avg_daily_pnl|sign_class }}">{{ detail.previous_avg_daily_pnl|money }}</span></div>
+    </div>
+    <div class="month-stat-card">
+      <div class="month-stat-label">Trading Days</div>
+      <div class="month-stat-value">{{ detail.trading_days }}</div>
+      {% month_daily_chart detail.daily %}
+      {% if detail.worst_day %}
+      <div class="month-stat-sub">Worst Day: <span class="neg">{{ detail.worst_day.1|money }}</span> <span class="muted">({{ detail.worst_day.0|date:"M j" }})</span></div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="month-transactions">
+    <div class="month-tx-title">Transactions</div>
+    {% if detail.transactions %}
+    <table class="legs-table roll-table month-tx-table">
+      <thead>
+        <tr><th>Date</th><th>Ticker</th><th>Type (Contracts)</th><th class="num">Realized PnL</th></tr>
+      </thead>
+      <tbody>
+        {% for row in detail.transactions %}
+        <tr>
+          <td>{{ row.closed_on|date:"M j, Y" }}</td>
+          <td>{{ row.underlying.code }}</td>
+          <td>{{ row.strategy|strategy_label }} ({{ row.contracts }})</td>
+          <td class="num {{ row.net_profit|sign_class }}">{{ row.net_profit|money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No closed trades this month.</p>
+    {% endif %}
+  </div>
+</div>

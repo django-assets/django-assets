@@ -72,7 +72,9 @@
   {% else %}
   <div class="month-grid">
     {% for cell in month_cards %}
-    <div class="month-card{% if cell.is_current %} current{% endif %}">
+    <div class="month-card{% if cell.is_current %} current{% endif %}" role="button" tabindex="0"
+         data-month-url="{% url 'optiontracker:calendar-month-detail' cell.date.year cell.date.month %}"
+         aria-label="View {{ cell.date|date:'F Y' }} details">
       <div class="month-card-name">{{ cell.date|date:"M" }}</div>
       {% if cell.data %}
       <div class="month-card-premium {{ cell.data.net_premium|sign_class }}">{{ cell.data.net_premium|money }}</div>

@@ -134,6 +134,70 @@ def profit_bar_chart(profit: dict, mode: str = "monthly", goal: object = None) -
     }
 
 
+@register.inclusion_tag("optiontracker/charts/month_daily_chart.html")
+def month_daily_chart(daily: list) -> dict:
+    """Daily-PnL bars for the calendar month-detail dialog: green/red
+    bars positioned by day-of-month from MonthDetail.daily."""
+    width, height = 440.0, 170.0
+    pad_left, pad_right, pad_top, pad_bottom = 58.0, 10.0, 12.0, 24.0
+    plot_w = width - pad_left - pad_right
+    plot_h = height - pad_top - pad_bottom
+
+    if not daily:
+        return {"width": width, "height": height, "empty": True}
+
+    values = [float(amount) for _day, amount in daily]
+    low = min(0.0, *values)
+    high = max(0.0, *values)
+    if high == low:
+        high = low + 1.0
+
+    def y_of(value: float) -> float:
+        return pad_top + (high - value) / (high - low) * plot_h
+
+    # x positions span the whole month (day 1 .. last day of the month).
+    year, month = daily[0][0].year, daily[0][0].month
+    last_day = (
+        datetime.date(year + 1, 1, 1) if month == 12 else datetime.date(year, month + 1, 1)
+    ) - datetime.timedelta(days=1)
+    slot = plot_w / float(last_day.day)
+    bar_w = max(min(slot * 0.7, 14.0), 3.0)
+    bars = []
+    for day, amount in daily:
+        value = float(amount)
+        top = y_of(max(value, 0.0))
+        bottom = y_of(min(value, 0.0))
+        bars.append(
+            {
+                "x": pad_left + slot * (day.day - 1) + (slot - bar_w) / 2,
+                "y": top,
+                "w": bar_w,
+                "h": max(bottom - top, 1.0),
+                "negative": value < 0,
+                "amount": amount,  # library Decimal, formatted by tracker_format
+                "date": day,
+            }
+        )
+    ticks = [{"y": y_of(value), "label": _tick_label(value)} for value in _nice_ticks(low, high, 3)]
+    x_ticks = [
+        {"x": pad_left + slot * (day - 1) + slot / 2, "label": str(day)}
+        for day in range(1, last_day.day + 1, 5)
+    ]
+    return {
+        "width": width,
+        "height": height,
+        "empty": False,
+        "bars": bars,
+        "ticks": ticks,
+        "x_ticks": x_ticks,
+        "zero_y": y_of(0.0),
+        "pad_left": pad_left,
+        "tick_x": pad_left - 8.0,
+        "plot_right": width - pad_right,
+        "label_y": height - 6.0,
+    }
+
+
 @register.inclusion_tag("optiontracker/charts/cumulative_chart.html")
 def cumulative_profit_chart(
     daily_cumulative: list, mode: str = "weekly", goal: object = None
