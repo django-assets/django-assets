@@ -3,10 +3,11 @@
 <p class="empty-row">No closed trades in the selected window.</p>
 {% else %}
 <div class="chart-scroll">
-  <svg class="chart" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="Cumulative option profit line chart">
+  <svg class="chart" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="Cumulative option profit vs account value, dual-axis line chart">
     {% for tick in ticks %}
     <line class="gridline" x1="{{ pad_left }}" x2="{{ plot_right }}" y1="{{ tick.y }}" y2="{{ tick.y }}"/>
-    <text class="tick-label" x="{{ tick_x }}" y="{{ tick.y }}" text-anchor="end" dominant-baseline="middle">{{ tick.label }}</text>
+    {% if tick.left_label %}<text class="tick-label" x="{{ tick_x }}" y="{{ tick.y }}" text-anchor="end" dominant-baseline="middle">{{ tick.left_label }}</text>{% endif %}
+    {% if tick.right_label %}<text class="tick-label" x="{{ tick_x_right }}" y="{{ tick.y }}" text-anchor="start" dominant-baseline="middle">{{ tick.right_label }}</text>{% endif %}
     {% endfor %}
     {% if area %}<polygon class="area" points="{{ area }}"/>{% endif %}
     {% if line %}<polyline class="line" points="{{ line }}" fill="none"/>{% endif %}

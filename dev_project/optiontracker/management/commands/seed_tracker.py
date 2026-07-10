@@ -229,6 +229,48 @@ class Command(BaseCommand):
         for symbol, side, contracts, kind in history:
             self._closed_history(symbol, side=side, contracts=contracts, days_ago=day, kind=kind)
             day += random.randint(4, 11)
+        self._assigned_history("CONL")
+
+    def _assigned_history(self, symbol: str) -> None:
+        """One CSP that ended in ASSIGNMENT: the option closes to zero
+        while shares arrive at the strike — so the History screen's
+        'Assigned' filter has a real row."""
+        underlying = self._ticker(symbol)
+        expiry = (timezone.now() - datetime.timedelta(days=20)).date()
+        strike = D("25")
+        code = f"{symbol}{expiry:%y%m%d}P{int(strike * 1000):08d}"
+        option = self._instrument(
+            code,
+            quantity_decimals=0,
+            price_decimals=4,
+            multiplier=D("100"),
+            price_currency=self.usd,
+        )
+        OptionMeta.objects.get_or_create(
+            instrument=option,
+            defaults={
+                "underlying": underlying,
+                "expiry": expiry,
+                "strike": strike,
+                "right": "P",
+            },
+        )
+        open_ts = timezone.now() - datetime.timedelta(days=34)
+        assign_ts = datetime.datetime.combine(expiry, datetime.time(20, 0), tzinfo=datetime.UTC)
+        open_tx = self._book(
+            ts=open_ts,
+            position_legs=[(option, -2)],
+            cash=D("310.50"),
+            fee=self._fee(2),
+            description=f"open {symbol} csp (later assigned)",
+        )
+        assign_tx = self._book(
+            ts=assign_ts,
+            position_legs=[(option, 2), (underlying, 200)],
+            cash=-(strike * 200),
+            description=f"{symbol} assignment: 200 shares at {strike}",
+        )
+        self._trade(f"{symbol} assigned csp", [open_tx, assign_tx])
 
     # -- strategy builders --------------------------------------------------------
 
@@ -518,6 +560,7 @@ class Command(BaseCommand):
         premium = D(random.randrange(150, 1700)) + D("0.75")
         win = random.random() > 0.25
         debit = (premium * (D("0.35") if win else D("1.55"))).quantize(D("0.01"))
+
         def wing_split(net: D) -> "tuple[D, D]":
             """(short_leg_cash, long_leg_cash): short receives net + wing,
             long pays the wing — combo nets exactly to `net`."""
@@ -547,7 +590,7 @@ class Command(BaseCommand):
         else:  # per-leg fills at the same instant → per-leg prices derive
             open_short, open_long = wing_split(premium)
             close_short, close_long = wing_split(debit)
-            for (inst, qty), cash in zip(legs, (open_short, -open_long)):
+            for (inst, qty), cash in zip(legs, (open_short, -open_long), strict=True):
                 transactions.append(
                     self._book(
                         ts=open_ts,
@@ -557,7 +600,7 @@ class Command(BaseCommand):
                         description=f"open {symbol} history leg",
                     )
                 )
-            for (inst, qty), cash in zip(legs, (-close_short, close_long)):
+            for (inst, qty), cash in zip(legs, (-close_short, close_long), strict=True):
                 transactions.append(
                     self._book(
                         ts=close_ts,

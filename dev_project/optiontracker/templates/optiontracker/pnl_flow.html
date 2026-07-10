@@ -1,26 +1,56 @@
 {% extends "optiontracker/base.html" %}
-{% load tracker_format tracker_charts %}
+{% load tracker_format %}
 {% block title %}PnL Flow — OptionTracker{% endblock %}
 {% block content %}
 <section class="card page-card">
   <div class="page-head">
     <h1>PnL Flow <span class="badge-demo">Demo data</span></h1>
-    <p class="page-desc">Track options PnL flow by symbol, call/put, and outcome. Only finalized trades are included.</p>
+    <p class="page-desc">Track options PnL flow by strategy, symbol, call/put, and date. The chart shows the top 10 symbols by default; use filters to view more. Only finalized trades are included.</p>
   </div>
 
-  {% if flow.rows %}
-  <div class="chart-card flow-card">
-    {% pnl_flow_chart flow %}
-    <div class="flow-legend">
-      {% for row in flow.rows %}
-      <span class="flow-legend-item {{ row.realized_pnl|sign_class }}">
-        {{ row.underlying.code }} · {{ row.right|right_label }} · {{ row.outcome|capfirst }} — {{ row.realized_pnl|money }}
-      </span>
-      {% endfor %}
+  <form id="flow-filters" class="filter-row" autocomplete="off" onsubmit="return false">
+    <label class="search-box">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="search" name="q" value="{{ query }}" placeholder="Search symbols..."
+             hx-get="{% url 'optiontracker:pnl-flow' %}"
+             hx-trigger="input changed delay:300ms, search"
+             hx-target="#flow-body" hx-swap="outerHTML"
+             hx-include="#flow-filters" hx-push-url="true">
+    </label>
+    <div class="dropdown">
+      <button type="button" class="btn dropdown-toggle" data-dropdown="flow-strategy-menu">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></svg>
+        Strategy
+      </button>
+      <div class="dropdown-menu" id="flow-strategy-menu" hidden>
+        <div class="dropdown-title">Filter by strategy</div>
+        {% for slug in strategy_options %}
+        <label class="dropdown-check">
+          <input type="checkbox" name="strategy" value="{{ slug }}"
+                 {% if slug in selected_strategies %}checked{% endif %}
+                 hx-get="{% url 'optiontracker:pnl-flow' %}"
+                 hx-trigger="change"
+                 hx-target="#flow-body" hx-swap="outerHTML"
+                 hx-include="#flow-filters" hx-push-url="true">
+          {{ slug|strategy_label }}
+        </label>
+        {% endfor %}
+      </div>
     </div>
-  </div>
-  {% else %}
-  <p class="empty-row">No finalized trades yet.</p>
-  {% endif %}
+    <label class="select-box">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+      <select name="range"
+              hx-get="{% url 'optiontracker:pnl-flow' %}"
+              hx-trigger="change"
+              hx-target="#flow-body" hx-swap="outerHTML"
+              hx-include="#flow-filters" hx-push-url="true">
+        {% for code, label in date_ranges %}
+        <option value="{{ code }}" {% if code == range_code %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+
+  {% include "optiontracker/_flow_body.html" %}
 </section>
 {% endblock %}

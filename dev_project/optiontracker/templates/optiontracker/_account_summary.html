@@ -9,7 +9,7 @@
   <div class="summary-body">
     <div class="summary-item">
       <span class="summary-label">Total Value</span>
-      <span class="summary-value">{{ summary.total_value|money }}{% if summary.total_return_pct is not None %} <span class="summary-return {{ summary.total_return_pct|sign_class }}">({{ summary.total_return_pct|pct1 }})</span>{% endif %}</span>
+      <span class="summary-value">{{ summary.total_value|money }}{% if summary.total_return_pct is not None %} <span class="summary-return {{ summary.total_return_pct|sign_class }}">({% if summary.total_return_pct|sign_class == 'neg' %}&darr;{% else %}&uarr;{% endif %} {{ summary.total_return_pct|pct1_abs }})</span>{% endif %}</span>
     </div>
     <div class="summary-item">
       <span class="summary-label">Options Position</span>

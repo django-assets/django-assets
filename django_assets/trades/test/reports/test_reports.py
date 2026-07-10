@@ -667,3 +667,8 @@ def test_closed_strategy_assigned_flag(user, usd, accounts, spy):
     rows = closed_option_strategies(user)
     row = next(r for r in rows if r.trade == trade)
     assert row.assigned is True
+    # The strike cash is the SHARES' basis (calculate_pnl's assignment
+    # policy), not an option loss: realized = the premium kept.
+    assert row.realized_pnl == D("120.00")
+    # And the history label is the option structure, not "stock".
+    assert row.strategy == "short_put"

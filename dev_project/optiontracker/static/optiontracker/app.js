@@ -49,6 +49,31 @@
       return;
     }
 
+    // In-page dialogs (roll history, add wheel position): any button
+    // carrying data-dialog opens the named <dialog>; ✕ or backdrop closes.
+    var dialogButton = event.target.closest("[data-dialog]");
+    if (dialogButton) {
+      event.stopPropagation();
+      var dialog = document.getElementById(dialogButton.getAttribute("data-dialog"));
+      if (dialog && dialog.showModal) dialog.showModal();
+      return;
+    }
+    var dialogClose = event.target.closest(".dialog-close");
+    if (dialogClose) {
+      var openDialog = dialogClose.closest("dialog");
+      if (openDialog) openDialog.close();
+      return;
+    }
+    if (event.target.tagName === "DIALOG") {
+      // click landed on the backdrop (outside the dialog's content box)
+      var rect = event.target.getBoundingClientRect();
+      var inside =
+        event.clientX >= rect.left && event.clientX <= rect.right &&
+        event.clientY >= rect.top && event.clientY <= rect.bottom;
+      if (!inside) event.target.close();
+      return;
+    }
+
     var dropdownToggle = event.target.closest(".dropdown-toggle");
     if (dropdownToggle) {
       var menu = document.getElementById(dropdownToggle.getAttribute("data-dropdown"));

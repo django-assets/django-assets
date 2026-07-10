@@ -1,0 +1,10 @@
+{% load tracker_format tracker_charts %}
+<div id="flow-body">
+  {% if flow.rows %}
+  <div class="chart-card flow-card">
+    {% pnl_flow_chart flow %}
+  </div>
+  {% else %}
+  <p class="empty-row">No finalized trades match the current filters.</p>
+  {% endif %}
+</div>

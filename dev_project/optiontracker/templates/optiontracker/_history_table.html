@@ -12,9 +12,13 @@
         <th>Symbol</th>
         <th>Type (Contracts)</th>
         <th>Expiry</th>
-        <th>Trade Date</th>
+        <th class="sortable{% if sort_state.trade_date.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.trade_date.url }}" hx-target="#history-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.trade_date.url }}">Trade Date <span class="sort-arrow">{% if sort_state.trade_date.active %}{% if sort_state.trade_date.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
         <th class="num">Initial Premium</th>
-        <th class="num">Realized PnL</th>
+        <th class="sortable num{% if sort_state.pnl.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.pnl.url }}" hx-target="#history-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.pnl.url }}">Realized PnL <span class="sort-arrow">{% if sort_state.pnl.active %}{% if sort_state.pnl.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
       </tr>
     </thead>
     <tbody>
@@ -59,4 +63,13 @@
       {% endfor %}
     </tbody>
   </table>
+  <div class="pager">
+    {% if page_urls.prev %}
+    <a class="btn" hx-get="{{ page_urls.prev }}" hx-target="#history-table" hx-swap="outerHTML" hx-push-url="true" href="{{ page_urls.prev }}">Prev</a>
+    {% endif %}
+    {% if page_urls.next %}
+    <a class="btn" hx-get="{{ page_urls.next }}" hx-target="#history-table" hx-swap="outerHTML" hx-push-url="true" href="{{ page_urls.next }}">Next</a>
+    {% endif %}
+    <span class="muted small">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+  </div>
 </div>

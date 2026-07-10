@@ -1,0 +1,25 @@
+{# Chart include — ALLOWED arithmetic zone (arc geometry from tracker_charts). #}
+{% if empty %}
+<p class="empty-row">No closed strategies in the selected window.</p>
+{% else %}
+<div class="donut-wrap">
+  <svg class="donut-chart" viewBox="0 0 {{ size }} {{ size }}" role="img" aria-label="Strategies count donut chart">
+    {% for segment in segments %}
+    {% if segment.full_circle %}
+    <circle cx="{{ cx }}" cy="{{ cy }}" r="{{ radius }}" fill="none" stroke="{{ segment.color }}" stroke-width="{{ stroke }}">
+      <title>{{ segment.label }}: {{ segment.count }} ({{ segment.share_label }})</title>
+    </circle>
+    {% else %}
+    <path d="{{ segment.d }}" fill="none" stroke="{{ segment.color }}" stroke-width="{{ stroke }}">
+      <title>{{ segment.label }}: {{ segment.count }} ({{ segment.share_label }})</title>
+    </path>
+    {% endif %}
+    {% endfor %}
+  </svg>
+  <div class="donut-legend">
+    {% for entry in legend %}
+    <span class="donut-legend-item"><span class="legend-dot" style="background: {{ entry.color }}"></span>{{ entry.label }} <span class="muted">({{ entry.count }})</span></span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}

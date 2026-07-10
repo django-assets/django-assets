@@ -247,6 +247,18 @@ def _events(trade: Trade) -> "list[_Event]":
     return sorted(grouped.values(), key=lambda event: event.when)
 
 
+def _option_event_cash(event: _Event, metas: "dict[int, OptionMeta]") -> Decimal:
+    """The event's cash attributable to its OPTION legs. Assignment /
+    exercise policy (same as Trade.calculate_pnl): when an event both
+    closes options and opens a non-option position, the cash is the new
+    position's basis (the strike payment), not option P&L."""
+    opens_shares = any(iid not in metas and delta != 0 for iid, delta in event.positions.items())
+    touches_options = any(iid in metas for iid in event.positions)
+    if opens_shares and touches_options:
+        return Decimal(0)
+    return event.cash
+
+
 def _transaction_events(trade: Trade) -> "list[_Event]":
     """Like _events, but at raw transaction granularity (no timestamp
     merge) — the source for per-leg price derivation."""
@@ -397,6 +409,25 @@ def _margin_estimate(strategy: str | None, legs: "list[OpenLeg]", premium: Decim
 
 
 # -- open strategies ------------------------------------------------------------------
+
+
+def _classify_option_opening(trade: Trade, metas: "dict[int, OptionMeta]") -> str | None:
+    """The strategy of the trade's OPTION structure at its option
+    opening event — the history label for trades whose whole-trade
+    classification is dominated by later share legs (assignments)."""
+    from django_assets.trades.detection import classify_structure
+
+    allocations = list(
+        trade.allocations.filter(category="", leg__instrument_id__in=list(metas)).select_related(
+            "leg__instrument", "leg__transaction"
+        )
+    )
+    if not allocations:
+        return None
+    by_ts: dict[datetime.datetime, list[Any]] = {}
+    for allocation in allocations:
+        by_ts.setdefault(allocation.leg.transaction.timestamp, []).append(allocation.leg)
+    return classify_structure(by_ts[sorted(by_ts)[0]])
 
 
 def _strategy_tag(trade: Trade) -> str | None:
@@ -642,11 +673,12 @@ def closed_option_strategies(user: Any) -> "list[ClosedStrategy]":
                 per_contract = meta.instrument.quantize_price(
                     abs(event.cash) / abs(event.positions[single]) / meta.instrument.multiplier
                 )
+            option_cash = _option_event_cash(event, metas)
             if not seen_option_event:
                 opened_on = event.when.date()
-                initial_premium = event.cash
+                initial_premium = option_cash
                 seen_option_event = True
-            realized += event.cash
+            realized += option_cash
             for iid in touched:
                 leg_fees[iid] += event.fees / len(touched)
             for iid in touched:
@@ -686,10 +718,13 @@ def closed_option_strategies(user: Any) -> "list[ClosedStrategy]":
             for event in events
             for iid, delta in event.positions.items()
         )
+        tag = _strategy_tag(trade)
+        if tag in (None, "stock"):
+            tag = _classify_option_opening(trade, metas) or tag
         rows.append(
             ClosedStrategy(
                 trade=trade,
-                strategy=_strategy_tag(trade),
+                strategy=tag,
                 underlying=next(iter(metas.values())).underlying,
                 contracts=int(max((leg.contracts for leg in legs), default=0)),
                 expiration=max((meta.expiry for meta in metas.values()), default=None),
@@ -867,7 +902,7 @@ def premium_calendar(
             when = event.when.date()
             if (when.year, when.month) != (year, month):
                 continue
-            days[when]["net"] += event.cash - event.fees
+            days[when]["net"] += _option_event_cash(event, metas) - event.fees
             days[when]["events"] += 1
     for row in closed_option_strategies(user):
         if wanted is not None and (

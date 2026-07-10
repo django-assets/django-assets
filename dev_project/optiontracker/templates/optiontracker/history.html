@@ -12,6 +12,14 @@
   </div>
 
   <form id="history-filters" class="filter-row" autocomplete="off" onsubmit="return false">
+    <label class="search-box">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="search" name="q" value="{{ query }}" placeholder="Search by symbol"
+             hx-get="{% url 'optiontracker:history' %}"
+             hx-trigger="input changed delay:300ms, search"
+             hx-target="#history-table" hx-swap="outerHTML"
+             hx-include="#history-filters" hx-push-url="true">
+    </label>
     <div class="dropdown">
       <button type="button" class="btn dropdown-toggle" data-dropdown="history-strategy-menu">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></svg>
@@ -32,6 +40,15 @@
         {% endfor %}
       </div>
     </div>
+    
+    <label class="btn filter-chip">
+      <input type="checkbox" name="assigned" value="1" {% if assigned_only %}checked{% endif %}
+             hx-get="{% url 'optiontracker:history' %}"
+             hx-trigger="change"
+             hx-target="#history-table" hx-swap="outerHTML"
+             hx-include="#history-filters" hx-push-url="true">
+      Assigned
+    </label>
     <label class="select-box">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
       <select name="range"
@@ -46,7 +63,6 @@
     </label>
   </form>
 
-  <h3 class="section-title">Closed option strategies</h3>
   {% include "optiontracker/_history_table.html" %}
 </section>
 {% endblock %}

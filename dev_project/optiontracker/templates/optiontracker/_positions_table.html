@@ -46,7 +46,14 @@
             {% endwith %}
           {% else %}&mdash;{% endif %}
         </td>
-        <td class="num {{ row.pnl_pct|sign_class }}">{{ row.pnl_pct|pct0 }}</td>
+        <td class="num">
+          {% if row.rolls %}
+          <span class="{{ row.pnl_pct_incl_rolls|sign_class }}">{{ row.pnl_pct_incl_rolls|pct0 }}</span>
+          <span class="info-dot" title="PnL includes realized PnL from rolled selections. Expand the row to view details.">i</span>
+          {% else %}
+          <span class="{{ row.pnl_pct|sign_class }}">{{ row.pnl_pct|pct0 }}</span>
+          {% endif %}
+        </td>
         <td class="num">{{ row.market_value|money }}</td>
         <td class="num">{{ row.delta_pct|pct1 }}</td>
         <td class="num">
@@ -77,6 +84,41 @@
               <span><span class="muted">AROI (init/now):</span> {{ row.aroi_initial|pct0 }}/{{ row.aroi_now|pct0 }}</span>
               {% endif %}
             </div>
+            <div class="detail-actions">
+              <a class="btn tv-icon-btn" href="https://www.tradingview.com/chart/?symbol={{ row.underlying.code|urlencode }}" target="_blank" rel="noopener" title="Open TradingView chart for {{ row.underlying.code }}" aria-label="Open TradingView chart for {{ row.underlying.code }}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+              </a>
+              <button type="button" class="btn btn-primary roll-btn" data-dialog="roll-dialog-{{ row.trade.pk }}" title="View roll selection">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/></svg>
+                {% if row.rolls %}Modify Roll{% else %}Roll Selection{% endif %}
+              </button>
+            </div>
+            <dialog class="app-dialog" id="roll-dialog-{{ row.trade.pk }}">
+              <div class="dialog-head">
+                <h3>Roll Selections — {{ row.underlying.code }}</h3>
+                <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+              </div>
+              {% if row.rolls %}
+              <table class="legs-table roll-table">
+                <thead>
+                  <tr><th>Open Date</th><th>Close Date</th><th class="num">Initial Premium</th><th class="num">Realized PnL</th></tr>
+                </thead>
+                <tbody>
+                  {% for roll in row.rolls %}
+                  <tr>
+                    <td>{{ roll.opened_on|date:"M j, Y" }}</td>
+                    <td>{{ roll.closed_on|date:"M j, Y" }}</td>
+                    <td class="num">{{ roll.initial_premium|money }}</td>
+                    <td class="num {{ roll.realized_pnl|sign_class }}">{{ roll.realized_pnl|money }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+              {% else %}
+              <p>No roll selections yet.</p>
+              {% endif %}
+              <p class="muted small">This is a demo — roll selections cannot be modified here.</p>
+            </dialog>
             <table class="legs-table">
               <thead>
                 <tr><th>Side / Right</th><th class="num">Strike</th><th class="num">Price</th><th class="num">IV</th><th class="num">Delta</th><th class="num">Gamma</th><th class="num">Theta</th><th class="num">Vega</th></tr>

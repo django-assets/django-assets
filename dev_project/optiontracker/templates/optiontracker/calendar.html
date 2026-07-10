@@ -8,34 +8,17 @@
     <p class="page-desc">Premium paychecks organized by date to track your option income over time</p>
   </div>
 
-  <div class="calendar-controls">
-    <a class="btn" href="?year={{ prev.year }}&amp;month={{ prev.month }}" aria-label="Previous month">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
-    </a>
-    <div class="calendar-title">{{ month_date|date:"F Y" }}</div>
-    <a class="btn" href="?year={{ next.year }}&amp;month={{ next.month }}" aria-label="Next month">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
-    </a>
-  </div>
+  <form id="calendar-filters" class="filter-row" autocomplete="off" onsubmit="return false">
+    <label class="search-box">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="search" name="q" value="{{ query }}" placeholder="Search symbols..."
+             hx-get="{% url 'optiontracker:calendar' %}"
+             hx-trigger="input changed delay:300ms, search"
+             hx-target="#calendar-body" hx-swap="outerHTML"
+             hx-include="#calendar-filters,#calendar-view-form" hx-push-url="true">
+    </label>
+  </form>
 
-  <div class="calendar-grid">
-    {% for name in weekday_names %}
-    <div class="calendar-weekday">{{ name }}</div>
-    {% endfor %}
-    {% for week in weeks %}
-      {% for cell in week %}
-      <div class="calendar-cell {% if not cell.in_month %}out-month{% endif %}{% if cell.is_today %} today{% endif %}">
-        <div class="calendar-daynum">{{ cell.date.day }}</div>
-        {% if cell.data %}
-        <div class="calendar-premium {{ cell.data.net_premium|sign_class }}">{{ cell.data.net_premium|money }}</div>
-        <div class="calendar-trades muted">{{ cell.data.events }} trade{{ cell.data.events|pluralize }}</div>
-        {% if cell.data.wins or cell.data.losses %}
-        <div class="calendar-closed muted">Closed: <span class="pos">{{ cell.data.wins }}W</span> <span class="neg">{{ cell.data.losses }}L</span></div>
-        {% endif %}
-        {% endif %}
-      </div>
-      {% endfor %}
-    {% endfor %}
-  </div>
+  {% include "optiontracker/_calendar_body.html" %}
 </section>
 {% endblock %}

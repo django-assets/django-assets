@@ -71,6 +71,14 @@ def money0(value: object) -> str:
 
 
 @register.filter
+def money0_abs(value: object) -> str:
+    """Unsigned whole-dollar magnitude for flow node labels: $5,288."""
+    if value is None:
+        return EM_DASH
+    return f"${abs(Decimal(str(value))):,.0f}"
+
+
+@register.filter
 def money_abs(value: object) -> str:
     """Magnitude as money — for debit 'Cost Basis' display."""
     if value is None:
@@ -101,6 +109,15 @@ def pct1(value: object) -> str:
     if value is None:
         return EM_DASH
     scaled = (Decimal(str(value)) * 100).quantize(Decimal("0.1"))
+    return f"{scaled}%"
+
+
+@register.filter
+def pct1_abs(value: object) -> str:
+    """Unsigned one-decimal percent (summary arrow renders the sign)."""
+    if value is None:
+        return EM_DASH
+    scaled = (abs(Decimal(str(value))) * 100).quantize(Decimal("0.1"))
     return f"{scaled}%"
 
 
@@ -139,6 +156,20 @@ def sign_class(value: object) -> str:
     if amount > 0:
         return "pos"
     if amount < 0:
+        return "neg"
+    return ""
+
+
+@register.filter
+def inverse_sign_class(value: object) -> str:
+    """CSS class for a figure where NEGATIVE is good (wheel adjusted-cost
+    discount: a cheaper basis is green): neg -> pos, pos -> neg."""
+    if value is None:
+        return ""
+    amount = Decimal(str(value))
+    if amount < 0:
+        return "pos"
+    if amount > 0:
         return "neg"
     return ""
 

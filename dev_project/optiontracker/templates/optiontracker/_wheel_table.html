@@ -1,0 +1,69 @@
+{% load tracker_format %}
+<div id="wheel-table" class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Symbol</th>
+        <th class="num">Shares</th>
+        <th class="num">Cost Basis</th>
+        <th class="num">Adjusted Cost</th>
+        <th class="num">Market Value</th>
+        <th class="num">PnL (%)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in entries %}
+      {% with campaign=entry.campaign %}
+      <tr class="pos-row expandable" tabindex="0">
+        <td class="sym-cell">
+          <svg class="row-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+          <span class="sym-avatar">{{ campaign.underlying.code|slice:":1" }}</span>
+          <span class="sym-text">
+            <a class="sym-link" href="https://www.tradingview.com/chart/?symbol={{ campaign.underlying.code|urlencode }}" target="_blank" rel="noopener">{{ campaign.underlying.code }}</a>
+            {% if entry.quote %}<span class="sym-price">({{ entry.quote.price|money }})</span>{% endif %}
+          </span>
+        </td>
+        <td class="num">{{ campaign.shares|floatformat:"0" }}</td>
+        <td class="num">{{ campaign.cost_basis|money }}</td>
+        <td class="num">{{ campaign.adjusted_cost|money }}{% if campaign.adjusted_cost_pct is not None %} <span class="{{ campaign.adjusted_cost_pct|inverse_sign_class }}">({{ campaign.adjusted_cost_pct|pct0 }})</span>{% endif %}</td>
+        <td class="num">{{ campaign.market_value|money }}</td>
+        <td class="num {{ campaign.pnl_pct|sign_class }}">{{ campaign.pnl_pct|pct2_signed }}</td>
+      </tr>
+      <tr class="detail-row" hidden>
+        <td colspan="6">
+          <div class="detail-panel">
+            <div class="detail-meta">
+              <span><span class="muted">Shares:</span> {{ campaign.shares|floatformat:"0" }}</span>
+              <span><span class="muted">Adjusted Cost:</span> {{ campaign.adjusted_cost|money }}</span>
+              <span><span class="muted">PnL:</span> <span class="{{ campaign.pnl|sign_class }}">{{ campaign.pnl|money }}</span></span>
+            </div>
+            {% if entry.legs %}
+            <table class="legs-table">
+              <thead>
+                <tr><th>Side / Right</th><th class="num">Strike</th><th>Expiration</th><th class="num">Contracts</th><th class="num">Price</th></tr>
+              </thead>
+              <tbody>
+                {% for leg in entry.legs %}
+                <tr>
+                  <td>{{ leg.side|side_label }} {{ leg.right|right_label }}</td>
+                  <td class="num">{{ leg.strike|money }}</td>
+                  <td>{{ leg.expiry|date:"Y-m-d" }}</td>
+                  <td class="num">{{ leg.contracts|floatformat:"0" }}</td>
+                  <td class="num">{{ leg.quote.price|money }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div class="muted small">No open option legs on this campaign right now.</div>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endwith %}
+      {% empty %}
+      <tr><td colspan="6" class="empty-row">No active wheel campaigns match the current filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

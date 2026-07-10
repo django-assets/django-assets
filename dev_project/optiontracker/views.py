@@ -11,6 +11,7 @@ import calendar as calendar_mod
 import datetime
 from operator import attrgetter
 
+from django.core.paginator import Paginator
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 
@@ -141,9 +142,16 @@ def option_positions(request: HttpRequest) -> HttpResponse:
     return render(request, "optiontracker/positions.html", context)
 
 
-def _wheel_entries(campaigns: "list[reports.WheelCampaign]") -> "list[dict]":
+def _wheel_entries(
+    campaigns: "list[reports.WheelCampaign]", legs_by_trade: "dict[int, list] | None" = None
+) -> "list[dict]":
+    legs_by_trade = legs_by_trade or {}
     return [
-        {"campaign": campaign, "quote": services.price_source().get_quote(campaign.underlying)}
+        {
+            "campaign": campaign,
+            "quote": services.price_source().get_quote(campaign.underlying),
+            "legs": legs_by_trade.get(campaign.trade.pk, []),
+        }
         for campaign in campaigns
     ]
 
@@ -151,8 +159,22 @@ def _wheel_entries(campaigns: "list[reports.WheelCampaign]") -> "list[dict]":
 def wheel(request: HttpRequest) -> HttpResponse:
     user, context = _base_context(request, "wheel")
     campaigns = reports.wheel_campaigns(user, services.price_source())
-    context["entries"] = _wheel_entries(campaigns)
     context["total_pnl"] = reports.wheel_total_pnl(campaigns)
+
+    query = request.GET.get("q", "").strip()
+    if query:
+        campaigns = [c for c in campaigns if query.upper() in c.underlying.code.upper()]
+
+    # Each campaign's open covered-call legs, straight from the library
+    # (selection by trade pk — no computation).
+    legs_by_trade = {
+        strategy.trade.pk: strategy.legs
+        for strategy in reports.open_option_strategies(user, services.price_source())
+    }
+    context["entries"] = _wheel_entries(campaigns, legs_by_trade)
+    context["query"] = query
+    if request.headers.get("HX-Request"):
+        return render(request, "optiontracker/_wheel_table.html", context)
     return render(request, "optiontracker/wheel.html", context)
 
 
@@ -167,8 +189,14 @@ def analytics(request: HttpRequest) -> HttpResponse:
     user, context = _base_context(request, "analytics")
     selected = [s for s in request.GET.getlist("strategy") if s]
     range_code = request.GET.get("range", "all")
+    query = request.GET.get("q", "").strip()
+    mode = "weekly" if request.GET.get("mode") == "weekly" else "monthly"
+    goal = request.GET.get("goal", "").strip()
     stats = reports.strategy_performance(
-        user, strategies=selected or None, start=_range_start(range_code)
+        user,
+        strategies=selected or None,
+        underlyings=[query] if query else None,
+        start=_range_start(range_code),
     )
     strategy_options = sorted(reports.strategy_performance(user).strategy_counts)
     today = datetime.date.today()
@@ -179,6 +207,11 @@ def analytics(request: HttpRequest) -> HttpResponse:
         start=today - datetime.timedelta(days=180),
         end=today,
     )
+    mode_state = {}
+    for name in ("monthly", "weekly"):
+        params = request.GET.copy()
+        params["mode"] = name
+        mode_state[name] = "?" + params.urlencode()
     context.update(
         {
             "stats": stats,
@@ -187,6 +220,10 @@ def analytics(request: HttpRequest) -> HttpResponse:
             "selected_strategies": selected,
             "range_code": range_code,
             "date_ranges": DATE_RANGES,
+            "query": query,
+            "mode": mode,
+            "goal": goal,
+            "mode_state": mode_state,
         }
     )
     if request.headers.get("HX-Request"):
@@ -196,7 +233,42 @@ def analytics(request: HttpRequest) -> HttpResponse:
 
 def pnl_flow_view(request: HttpRequest) -> HttpResponse:
     user, context = _base_context(request, "pnl_flow")
-    context["flow"] = reports.pnl_flow_summary(user)
+    query = request.GET.get("q", "").strip()
+    selected = [s for s in request.GET.getlist("strategy") if s]
+    range_code = request.GET.get("range", "all")
+    start = _range_start(range_code)
+
+    flow = reports.pnl_flow_summary(
+        user,
+        strategies=selected or None,
+        underlyings=[query] if query else None,
+        start=start,
+    )
+    top10_applied = False
+    if not query:
+        # Default view: the top 10 symbols by |realized amount| (selection/
+        # slicing is presentation; totals stay library-computed via re-query).
+        ranked = sorted(flow.by_symbol.items(), key=lambda kv: abs(kv[1]), reverse=True)
+        if len(ranked) > 10:
+            top_codes = [instrument.code for instrument, _amount in ranked[:10]]
+            flow = reports.pnl_flow_summary(
+                user, strategies=selected or None, underlyings=top_codes, start=start
+            )
+            top10_applied = True
+
+    context.update(
+        {
+            "flow": flow,
+            "top10_applied": top10_applied,
+            "query": query,
+            "selected_strategies": selected,
+            "strategy_options": sorted(reports.strategy_performance(user).strategy_counts),
+            "range_code": range_code,
+            "date_ranges": DATE_RANGES,
+        }
+    )
+    if request.headers.get("HX-Request"):
+        return render(request, "optiontracker/_flow_body.html", context)
     return render(request, "optiontracker/pnl_flow.html", context)
 
 
@@ -211,7 +283,9 @@ def calendar_view(request: HttpRequest) -> HttpResponse:
         year, month = today.year, today.month
         first = today.replace(day=1)
 
-    days = reports.premium_calendar(user, year, month)
+    query = request.GET.get("q", "").strip()
+    view_mode = "day" if request.GET.get("view") == "day" else "month"
+    days = reports.premium_calendar(user, year, month, underlyings=[query] if query else None)
     grid = calendar_mod.Calendar(firstweekday=6)  # Sun..Sat like the reference
     weeks = [
         [
@@ -225,17 +299,29 @@ def calendar_view(request: HttpRequest) -> HttpResponse:
         ]
         for week in grid.monthdatescalendar(year, month)
     ]
+    day_list = [{"date": day, "data": days[day]} for day in sorted(days)]
     prev_month = first - datetime.timedelta(days=1)
     next_month = (first + datetime.timedelta(days=32)).replace(day=1)
+    nav_urls = {}
+    for name, target in (("prev", prev_month), ("next", next_month)):
+        params = request.GET.copy()
+        params["year"] = target.year
+        params["month"] = target.month
+        nav_urls[name] = "?" + params.urlencode()
     context.update(
         {
             "weeks": weeks,
+            "day_list": day_list,
+            "view_mode": view_mode,
+            "query": query,
             "month_date": first,
-            "prev": {"year": prev_month.year, "month": prev_month.month},
-            "next": {"year": next_month.year, "month": next_month.month},
+            "prev_url": nav_urls["prev"],
+            "next_url": nav_urls["next"],
             "weekday_names": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
         }
     )
+    if request.headers.get("HX-Request"):
+        return render(request, "optiontracker/_calendar_body.html", context)
     return render(request, "optiontracker/calendar.html", context)
 
 
@@ -244,25 +330,73 @@ def history(request: HttpRequest) -> HttpResponse:
     rows = reports.closed_option_strategies(user)
     strategy_options = sorted({row.strategy for row in rows if row.strategy})
 
+    query = request.GET.get("q", "").strip()
     selected = [s for s in request.GET.getlist("strategy") if s]
     range_code = request.GET.get("range", "all")
+    assigned_only = bool(request.GET.get("assigned"))
     start = _range_start(range_code)
+    if query:
+        rows = [row for row in rows if query.upper() in _symbol_of(row).upper()]
     if selected:
         rows = [row for row in rows if row.strategy in selected]
     if start:
         rows = [row for row in rows if row.closed_on and row.closed_on >= start]
-    rows = sorted(rows, key=lambda row: row.closed_on or datetime.date.min, reverse=True)
+    if assigned_only:
+        rows = [row for row in rows if row.assigned]
 
-    stats = reports.strategy_performance(user, strategies=selected or None, start=start)
+    sort = request.GET.get("sort", "-trade_date")
+    descending = sort.startswith("-")
+    column = sort.lstrip("-")
+    if column == "pnl":
+        rows = sorted(rows, key=_none_last("net_profit"), reverse=descending)
+    else:
+        column = "trade_date"
+        rows = sorted(rows, key=lambda row: row.closed_on or datetime.date.min, reverse=descending)
+
+    sort_state = {}
+    for name in ("trade_date", "pnl"):
+        params = request.GET.copy()
+        params.pop("page", None)
+        is_active = column == name
+        params["sort"] = f"-{name}" if is_active and not descending else name
+        sort_state[name] = {
+            "url": "?" + params.urlencode(),
+            "active": is_active,
+            "descending": is_active and descending,
+        }
+
+    paginator = Paginator(rows, 10)  # pagination is presentation
+    page_obj = paginator.get_page(request.GET.get("page"))
+    page_urls = {}
+    if page_obj.has_previous():
+        params = request.GET.copy()
+        params["page"] = page_obj.previous_page_number()
+        page_urls["prev"] = "?" + params.urlencode()
+    if page_obj.has_next():
+        params = request.GET.copy()
+        params["page"] = page_obj.next_page_number()
+        page_urls["next"] = "?" + params.urlencode()
+
+    stats = reports.strategy_performance(
+        user,
+        strategies=selected or None,
+        underlyings=[query] if query else None,
+        start=start,
+    )
     context.update(
         {
-            "rows": rows,
+            "rows": page_obj.object_list,
+            "page_obj": page_obj,
+            "page_urls": page_urls,
             "stats": stats,
             "total_strategies": stats.wins + stats.losses,  # closure count, not money
             "strategy_options": strategy_options,
             "selected_strategies": selected,
             "range_code": range_code,
             "date_ranges": DATE_RANGES,
+            "query": query,
+            "assigned_only": assigned_only,
+            "sort_state": sort_state,
         }
     )
     if request.headers.get("HX-Request"):
