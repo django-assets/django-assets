@@ -102,6 +102,7 @@ class ClosedLeg:
     open_price: Decimal | None  # derivable only from single-instrument fills
     close_price: Decimal | None
     closed_on: datetime.date | None
+    fees: Decimal = Decimal(0)  # transaction fees pro-rated across touched legs
 
 
 @dataclass(frozen=True)
@@ -132,6 +133,8 @@ class AccountSummary:
     options_pnl: Decimal | None
     equity_pnl: Decimal | None
     margin_estimate: Decimal
+    contributions: Decimal  # net external cash (pure cash transactions)
+    total_return_pct: Decimal | None  # (total − contributions) / contributions
     unpriced: "list[Instrument]"
 
 
@@ -174,7 +177,9 @@ class WheelCampaign:
     shares: Decimal
     cost_basis: Decimal  # per share
     adjusted_cost: Decimal  # per share, net of option premiums
+    adjusted_cost_pct: Decimal | None  # discount vs raw basis (negative = cheaper)
     market_value: Decimal | None
+    pnl: Decimal | None  # absolute, vs adjusted basis
     pnl_pct: Decimal | None  # vs adjusted cost
     unpriced: "list[Instrument]"
 
@@ -430,9 +435,12 @@ def open_option_strategies(user: Any, price_source: PriceSource) -> "list[OpenSt
                 )
         market_value = abs(net_value) if net_value is not None else None
 
-        pnl = trade.calculate_pnl(price_source=price_source)
-        raw_unrealized = pnl["unrealized_pnl"] if priced else None
-        unrealized = raw_unrealized if isinstance(raw_unrealized, Decimal) else None
+        # Option-side unrealized: the live cohort's premium flows plus the
+        # (signed) cost of closing it now. Share legs riding in the same
+        # trade (covered structures) deliberately stay out — the dashboard's
+        # PnL%% column is an option-side number.
+        live_cash = live.total_cash if live else Decimal(0)
+        unrealized = live_cash + net_value if net_value is not None else None
         pnl_pct = (
             unrealized / abs(initial_premium)
             if unrealized is not None and initial_premium
@@ -484,9 +492,9 @@ def open_option_strategies(user: Any, price_source: PriceSource) -> "list[OpenSt
             if horizon > 0:
                 aroi_initial = initial_premium / margin * _DAYS_PER_YEAR / horizon
             elapsed = max((now.date() - opened_on).days, 1)
-            raw_total = pnl["total_pnl"] if priced else None
-            if isinstance(raw_total, Decimal):
-                aroi_now = raw_total / margin * _DAYS_PER_YEAR / elapsed
+            realized_rolls = sum((segment.realized_pnl for segment in rolls), Decimal(0))
+            if unrealized is not None:
+                aroi_now = (unrealized + realized_rolls) / margin * _DAYS_PER_YEAR / elapsed
 
         meta_of_primary = metas[primary.instrument.pk] if primary else next(iter(metas.values()))
         rows.append(
@@ -535,6 +543,7 @@ def closed_option_strategies(user: Any) -> "list[ClosedStrategy]":
         peak: dict[int, Decimal] = defaultdict(Decimal)
         open_price: dict[int, Decimal | None] = {}
         close_price: dict[int, Decimal | None] = {}
+        leg_fees: dict[int, Decimal] = defaultdict(Decimal)
         closed_on_by_iid: dict[int, datetime.date] = {}
         opened_on: datetime.date | None = None
         closed_on: datetime.date | None = None
@@ -557,6 +566,8 @@ def closed_option_strategies(user: Any) -> "list[ClosedStrategy]":
                 initial_premium = event.cash
                 seen_option_event = True
             realized += event.cash
+            for iid in touched:
+                leg_fees[iid] += event.fees / len(touched)
             for iid in touched:
                 before = positions[iid]
                 positions[iid] += event.positions[iid]
@@ -584,6 +595,7 @@ def closed_option_strategies(user: Any) -> "list[ClosedStrategy]":
                 open_price=open_price.get(iid),
                 close_price=close_price.get(iid),
                 closed_on=closed_on_by_iid.get(iid),
+                fees=leg_fees[iid].quantize(Decimal("0.01")),
             )
             for iid, meta in sorted(metas.items(), key=lambda kv: (kv[1].expiry, kv[1].strike))
             if peak[iid] > 0
@@ -647,12 +659,8 @@ def account_summary(
         .order_by("transaction__timestamp", "id")
     )
     positions: dict[Instrument, Decimal] = defaultdict(Decimal)
-    basis: dict[Instrument, Decimal] = defaultdict(Decimal)  # average-cost, equities only
     cash = Decimal(0)
-    flows: dict[int, Decimal] = defaultdict(Decimal)  # per-tx non-cash flow proxy
-    metas_cache: dict[int, bool] = {}
 
-    equity_events: dict[Instrument, list[tuple[Decimal, Decimal]]] = defaultdict(list)
     tx_cash: dict[int, Decimal] = defaultdict(Decimal)
     tx_equity: dict[int, list[tuple[Instrument, Decimal]]] = defaultdict(list)
     ordered_txs: list[int] = []
@@ -666,6 +674,12 @@ def account_summary(
             if leg.transaction_id not in ordered_txs:
                 ordered_txs.append(leg.transaction_id)
             tx_equity[leg.transaction_id].append((instrument, leg.amount))
+    # Pure cash transactions (no position legs on the user side) are
+    # external contributions: deposits and withdrawals.
+    contributions = sum(
+        (amount for tx_id, amount in tx_cash.items() if not tx_equity.get(tx_id)),
+        Decimal(0),
+    )
 
     option_flags = _option_metas([inst.pk for inst in positions])
     option_positions = {
@@ -725,14 +739,17 @@ def account_summary(
         else Decimal(0)
     )
 
+    total_value = cash + equity_value + options_value
     return AccountSummary(
-        total_value=cash + equity_value + options_value,
+        total_value=total_value,
         options_value=options_value,
         equity_value=equity_value,
         cash=cash,
         options_pnl=options_pnl,
         equity_pnl=equity_pnl,
         margin_estimate=margin,
+        contributions=contributions,
+        total_return_pct=((total_value - contributions) / contributions if contributions else None),
         unpriced=unpriced,
     )
 
@@ -884,6 +901,7 @@ def wheel_campaigns(user: Any, price_source: PriceSource) -> "list[WheelCampaign
             else None
         )
         pnl_pct = (quote.price - adjusted) / adjusted if quote and adjusted else None
+        adjusted_basis_total = underlying.quantize_price(adjusted * shares)
         campaigns.append(
             WheelCampaign(
                 trade=trade,
@@ -891,10 +909,149 @@ def wheel_campaigns(user: Any, price_source: PriceSource) -> "list[WheelCampaign
                 shares=shares,
                 cost_basis=cost_basis,
                 adjusted_cost=adjusted,
+                adjusted_cost_pct=(adjusted - cost_basis) / cost_basis if cost_basis else None,
                 market_value=market_value,
+                pnl=market_value - adjusted_basis_total if market_value is not None else None,
                 pnl_pct=pnl_pct,
                 unpriced=[] if quote else [underlying],
             )
         )
     campaigns.sort(key=lambda campaign: campaign.underlying.code)
     return campaigns
+
+
+def wheel_total_pnl(campaigns: "list[WheelCampaign]") -> Decimal | None:
+    """Σ campaign pnl; None when any campaign is unpriced (honest, not 0)."""
+    total = Decimal(0)
+    for campaign in campaigns:
+        if campaign.pnl is None:
+            return None
+        total += campaign.pnl
+    return total
+
+
+@dataclass(frozen=True)
+class FlowSummary:
+    """Aggregated P&L flow: per-node totals for the sankey's columns."""
+
+    rows: "list[FlowRow]"
+    total: Decimal
+    by_symbol: "dict[Instrument, Decimal]"
+    by_right: "dict[str, Decimal]"
+    by_outcome: "dict[str, Decimal]"
+
+    def share_of_total(self, amount: Decimal) -> Decimal | None:
+        """|amount| as a fraction of Σ|node| within the outcome axis."""
+        denominator = sum((abs(value) for value in self.by_outcome.values()), Decimal(0))
+        return abs(amount) / denominator if denominator else None
+
+
+def pnl_flow_summary(user: Any) -> FlowSummary:
+    rows = pnl_flow(user)
+    by_symbol: dict[Instrument, Decimal] = defaultdict(Decimal)
+    by_right: dict[str, Decimal] = defaultdict(Decimal)
+    by_outcome: dict[str, Decimal] = defaultdict(Decimal)
+    total = Decimal(0)
+    for row in rows:
+        by_symbol[row.underlying] += row.realized_pnl
+        by_right[row.right] += row.realized_pnl
+        by_outcome[row.outcome] += row.realized_pnl
+        total += row.realized_pnl
+    return FlowSummary(
+        rows=rows,
+        total=total,
+        by_symbol=dict(by_symbol),
+        by_right=dict(by_right),
+        by_outcome=dict(by_outcome),
+    )
+
+
+def account_value_series(
+    user: Any,
+    price_source: PriceSource,
+    *,
+    accounts: "list[Any]",
+    start: datetime.date,
+    end: datetime.date,
+) -> "list[tuple[datetime.date, Decimal]]":
+    """Daily account value (cash + positions at each session's close)
+    over [start, end]. Valuation policy, documented: each day marks at
+    the most recent close ON OR BEFORE it (marks carry forward across
+    days a particular instrument has no close); days before any market
+    data exist take positions at their flow value. Days emitted = union
+    of the instruments' close sessions plus ledger event days."""
+    from django_assets.core.models import TransactionLeg
+
+    account_ids = [account.pk for account in accounts]
+    legs = (
+        TransactionLeg.objects.filter(account_id__in=account_ids)
+        .select_related("instrument", "transaction")
+        .order_by("transaction__timestamp", "id")
+    )
+    cash_delta: dict[datetime.date, Decimal] = defaultdict(Decimal)
+    position_delta: dict[datetime.date, dict[Instrument, Decimal]] = defaultdict(
+        lambda: defaultdict(Decimal)
+    )
+    instruments: set[Instrument] = set()
+    for leg in legs:
+        day = leg.transaction.timestamp.date()
+        if day > end:
+            continue
+        if leg.instrument.price_currency_id is None:
+            cash_delta[day] += leg.amount
+        else:
+            position_delta[day][leg.instrument] += leg.amount
+            instruments.add(leg.instrument)
+
+    closes: dict[Instrument, dict[datetime.date, Decimal]] = {}
+    for instrument in instruments:
+        by_day: dict[datetime.date, Decimal] = {}
+        series = price_source.get_ohlcv(instrument, start=start, end=end)
+        if series is not None and series.candles:
+            for candle in series.candles:
+                by_day[candle.session] = candle.close
+        else:  # no bar archive (options): dated closes, one ask per day
+            caps = price_source.capabilities(instrument)
+            bound = caps.closes if caps else None
+            if bound is not None:
+                day = max(start, bound.min)
+                last = min(end, bound.max)
+                while day <= last:
+                    quote = price_source.get_close(instrument, day)
+                    if quote is not None:
+                        by_day[day] = quote.price
+                    day += datetime.timedelta(days=1)
+        closes[instrument] = by_day
+
+    session_days = sorted(
+        {day for by_day in closes.values() for day in by_day}
+        | {day for day in cash_delta if start <= day <= end}
+        | {day for day in position_delta if start <= day <= end}
+    )
+    # Roll state forward from the beginning of the ledger to `start`.
+    cash = sum((amount for day, amount in cash_delta.items() if day < start), Decimal(0))
+    positions: dict[Instrument, Decimal] = defaultdict(Decimal)
+    for day in sorted(d for d in position_delta if d < start):
+        for instrument, amount in position_delta[day].items():
+            positions[instrument] += amount
+    last_mark: dict[Instrument, Decimal] = {}
+
+    out: list[tuple[datetime.date, Decimal]] = []
+    for day in session_days:
+        if day < start:
+            continue
+        cash += cash_delta.get(day, Decimal(0))
+        for instrument, amount in position_delta.get(day, {}).items():
+            positions[instrument] += amount
+        total = cash
+        for instrument, qty in positions.items():
+            if qty == 0:
+                continue
+            mark = closes[instrument].get(day)
+            if mark is not None:
+                last_mark[instrument] = mark
+            carried = last_mark.get(instrument)
+            if carried is not None:
+                total += instrument.quantize_price(qty * carried * instrument.multiplier)
+        out.append((day, total))
+    return out

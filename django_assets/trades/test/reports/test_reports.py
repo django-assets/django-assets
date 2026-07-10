@@ -302,6 +302,50 @@ def test_rolled_open_report_premiums(user, rolled, usd, spy):
     assert len(row.rolls) == 1
 
 
+def test_covered_call_pnl_is_option_side_only(user, usd, accounts, spy):
+    """A covered call's PnL% measures the OPTION leg against its premium
+    — the share leg's unrealized swing must not leak in (the reference
+    dashboard's PnL% column is option-side)."""
+    cc = make_option(usd, spy, strike="90", right="C")
+    trade = Trade.objects.create(user=user, name="cc")
+    trade.assign(
+        book(accounts, usd, ts=OPEN_TS, position_legs=[(spy, 100)], cash="-8500.00"),
+        fraction=1,
+    )
+    trade.assign(
+        book(
+            accounts,
+            usd,
+            ts=OPEN_TS + datetime.timedelta(days=1),
+            position_legs=[(cc, -1)],
+            cash="217.95",
+        ),
+        fraction=1,
+    )
+    trade.add_tag("strategy", "covered_call")
+    marks = Marks(
+        {
+            # shares are 15% under water; the option decayed to 0.40
+            spy: PriceQuote(
+                price=D("72.25"), currency=usd, as_of=None, source="t", kind=PriceKind.EOD
+            ),
+            cc: OptionQuote(
+                price=D("0.40"),
+                currency=usd,
+                as_of=None,
+                source="t",
+                kind=PriceKind.EOD,
+                delta=D("0.1402"),
+            ),
+        }
+    )
+    row = open_option_strategies(user, marks)[0]
+    assert row.initial_premium == D("217.95")
+    assert row.unrealized_pnl == D("217.95") - D("40.00")  # premium − cost to close
+    assert row.pnl_pct == (D("217.95") - D("40.00")) / D("217.95")
+    assert row.market_value == D("40.00")  # option legs only
+
+
 # -- closed strategies / history ----------------------------------------------------
 
 
@@ -408,6 +452,33 @@ def test_pnl_flow_symbol_right_outcome(user, closed, spy):
     assert flow.outcome == "gain"
 
 
+def test_pnl_flow_summary_totals_and_shares(user, closed, spy):
+    from django_assets.trades.reports import pnl_flow_summary
+
+    summary = pnl_flow_summary(user)
+    assert summary.total == D("433.25")
+    assert summary.by_symbol == {spy: D("433.25")}
+    assert summary.by_right == {"P": D("433.25")}
+    assert summary.by_outcome == {"gain": D("433.25")}
+    assert summary.share_of_total(D("433.25")) == D(1)
+
+
+def test_closed_legs_carry_pro_rata_fees(user, closed):
+    row = closed_option_strategies(user)[0]
+    # 6.50 open + 6.50 close, one leg → all of it
+    assert row.legs[0].fees == D("13.00")
+
+
+def test_account_summary_return_pct(user, usd, accounts, spy, pcs, marks):
+    with TransactionBuilder(account=accounts["cash"], timestamp=OPEN_TS) as b:
+        b.add_leg(account=accounts["cash"], instrument=usd, amount="30000.00")
+        b.add_leg(account=accounts["market"], instrument=usd, amount="-30000.00")
+    summary = account_summary(user, marks, accounts=[accounts["cash"], accounts["holdings"]])
+    assert summary.contributions == D("30000.00")
+    expected = (summary.total_value - D("30000.00")) / D("30000.00")
+    assert summary.total_return_pct == expected
+
+
 # -- wheel ---------------------------------------------------------------------------------
 
 
@@ -450,3 +521,53 @@ def test_wheel_campaigns_adjusted_cost(user, usd, accounts, spy):
     assert campaign.adjusted_cost == D("81.77")
     assert campaign.market_value == D("7805.00")
     assert campaign.pnl_pct == (D("78.05") - D("81.77")) / D("81.77")
+    # absolute pnl vs adjusted basis, and the adjusted-cost discount
+    assert campaign.pnl == D("7805.00") - D("8177.00")
+    assert campaign.adjusted_cost_pct == (D("81.77") - D("85.00")) / D("85.00")
+
+    from django_assets.trades.reports import wheel_total_pnl
+
+    assert wheel_total_pnl(campaigns) == D("7805.00") - D("8177.00")
+
+
+def test_account_value_series_daily_marks(user, usd, accounts, spy):
+    """Cash + positions valued at each session's close; marks carry
+    forward across days without a close for an instrument."""
+    import io
+
+    from django_assets.core.prices import CSVPriceSource
+    from django_assets.trades.reports import account_value_series
+
+    rows = (
+        "session,open,high,low,close\n"
+        "2026-06-29,100,101,99,100.00\n"
+        "2026-06-30,100,103,99,102.00\n"
+        "2026-07-02,102,105,101,104.00\n"
+    )
+    source = CSVPriceSource({spy: io.StringIO(rows)})
+    t0 = datetime.datetime(2026, 6, 28, 12, 0, tzinfo=UTC)
+    with TransactionBuilder(account=accounts["cash"], timestamp=t0) as b:
+        b.add_leg(account=accounts["cash"], instrument=usd, amount="20000.00")
+        b.add_leg(account=accounts["market"], instrument=usd, amount="-20000.00")
+    book(
+        accounts,
+        usd,
+        ts=datetime.datetime(2026, 6, 29, 14, 0, tzinfo=UTC),
+        position_legs=[(spy, 100)],
+        cash="-10000.00",
+    )
+    series = account_value_series(
+        user,
+        source,
+        accounts=[accounts["cash"], accounts["holdings"]],
+        start=datetime.date(2026, 6, 28),
+        end=datetime.date(2026, 7, 2),
+    )
+    values = dict(series)
+    assert values[datetime.date(2026, 6, 29)] == D("10000.00") + D("10000.00")  # cash + 100×100
+    assert values[datetime.date(2026, 6, 30)] == D("10000.00") + D("10200.00")
+    # 2026-07-01 has no close anywhere: not a session, not emitted
+    assert datetime.date(2026, 7, 1) not in values
+    assert values[datetime.date(2026, 7, 2)] == D("10000.00") + D("10400.00")
+    # the deposit day itself (no market data yet) still appears via cash
+    assert values[datetime.date(2026, 6, 28)] == D("20000.00")
