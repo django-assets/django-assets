@@ -6,10 +6,10 @@
 <div class="chart-scroll">
   <svg class="chart flow-chart" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="PnL flow: symbols to put/call to gain/loss">
     {% for ribbon in ribbons %}
-    <path class="flow-ribbon {{ ribbon.css }}" d="{{ ribbon.d }}"/>
+    <path class="flow-ribbon {{ ribbon.css }}" d="{{ ribbon.d }}"{% if ribbon.fill %} style="fill:{{ ribbon.fill }}"{% endif %}/>
     {% endfor %}
     {% for node in nodes %}
-    <rect class="flow-node {{ node.css }}" x="{{ node.x }}" y="{{ node.y }}" width="{{ node.w }}" height="{{ node.h }}" rx="3"/>
+    <rect class="flow-node {{ node.css }}" x="{{ node.x }}" y="{{ node.y }}" width="{{ node.w }}" height="{{ node.h }}" rx="3"{% if node.fill %} style="fill:{{ node.fill }}"{% endif %}/>
     <text class="flow-label" x="{{ node.label_x }}" y="{{ node.label_y }}" text-anchor="{{ node.anchor }}">{{ node.label }}<tspan class="flow-sublabel" x="{{ node.label_x }}" dy="15">{{ node.amount|money0_abs }} · {{ node.share|pct2 }}</tspan></text>
     {% endfor %}
   </svg>

@@ -1305,7 +1305,8 @@ dialog.app-dialog.tour-open {
 
 .flow-node-symbol { fill: #8b5cf6; }
 .flow-node-right { fill: #f59e0b; }
-.flow-node-outcome { fill: var(--green); }
+.flow-node-gain { fill: #34d399; }
+.flow-node-loss { fill: #f87171; }
 .flow-ribbon { opacity: 0.45; }
 .flow-mid { fill: #6d5bd0; }
 .flow-gain { fill: #1f9d55; }
@@ -1605,3 +1606,6 @@ dialog.app-dialog.tour-open {
 :root[data-theme="light"] .stat-icon-blue { color: rgb(85, 112, 241); }
 .flow-put { fill: #1f9d55; }
 .flow-call { fill: #f59e0b; }
+
+#wheel-table .sym-text { flex-direction: row; gap: 4px; align-items: baseline; }
+#wheel-table .sym-price { font-size: 14px; color: var(--text); }

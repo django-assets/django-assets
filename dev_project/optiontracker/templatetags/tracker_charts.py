@@ -394,6 +394,18 @@ def pnl_flow_chart(summary) -> dict:
     rows = summary.rows
     width, height = 960.0, 560.0
     node_w, pad_y, gap = 14.0, 24.0, 14.0
+    symbol_palette = [
+        "#6366f1",
+        "#3b82f6",
+        "#a855f7",
+        "#ec4899",
+        "#14b8a6",
+        "#f59e0b",
+        "#10b981",
+        "#ef4444",
+        "#8b5cf6",
+        "#06b6d4",
+    ]
     col_x = [180.0, 483.0, 786.0]
     right_labels = {"P": "Put", "C": "Call", "mixed": "Mixed"}
     outcome_labels = {"gain": "Gain", "loss": "Loss"}
@@ -413,6 +425,9 @@ def pnl_flow_chart(summary) -> dict:
 
     by_symbol_code = {inst.code: amount for inst, amount in summary.by_symbol.items()}
     symbol_order = list(dict.fromkeys(row.underlying.code for row in rows))
+    symbol_hue = {
+        code: symbol_palette[index % len(symbol_palette)] for index, code in enumerate(symbol_order)
+    }
     columns = [
         build_nodes(symbol_order, lambda row: row.underlying.code, by_symbol_code.get),
         build_nodes(["P", "C", "mixed"], lambda row: row.right, summary.by_right.get),
@@ -456,6 +471,7 @@ def pnl_flow_chart(summary) -> dict:
             {
                 "d": ribbon(symbol_node, right_node, weight, col_x[0] + node_w, col_x[1]),
                 "css": "flow-mid",
+                "fill": symbol_hue.get(row.underlying.code),
             }
         )
         ribbons.append(
@@ -490,12 +506,20 @@ def pnl_flow_chart(summary) -> dict:
         return out
 
     nodes = (
-        node_list(columns[0], col_x[0], None, "flow-node-symbol", "end")
+        [
+            {**node, "fill": symbol_hue.get(node["key"])}
+            for node in node_list(columns[0], col_x[0], None, "flow-node-symbol", "end")
+        ]
         + [
             {**node, "css": {"P": "flow-put", "C": "flow-call"}.get(node["key"], "flow-node-right")}
             for node in node_list(columns[1], col_x[1], right_labels, "flow-node-right", "start")
         ]
-        + node_list(columns[2], col_x[2], outcome_labels, "flow-node-outcome", "start")
+        + [
+            {**node, "css": "flow-node-gain" if node["key"] == "gain" else "flow-node-loss"}
+            for node in node_list(
+                columns[2], col_x[2], outcome_labels, "flow-node-outcome", "start"
+            )
+        ]
     )
     return {"width": width, "height": height, "empty": False, "nodes": nodes, "ribbons": ribbons}
 
