@@ -1674,3 +1674,66 @@ def roll_candidates(
         contracts=contracts,
         candidates=candidates[:count],
     )
+
+
+@dataclass(frozen=True)
+class RollLink:
+    """The reference roll finder: link an open option position to PRIOR
+    closed trades on the same underlying (a roll's predecessors). All
+    library-backed — the candidates are closed strategies, the current
+    summary is the open row."""
+
+    trade: Trade
+    underlying: Instrument
+    strategy: str | None
+    contracts: int
+    strike: Decimal | None
+    opened_on: datetime.date | None
+    expiration: datetime.date | None
+    initial_premium: Decimal
+    current_pnl: Decimal | None
+    lookback_days: int
+    candidates: "list[ClosedStrategy]"  # newest close first
+
+
+def roll_link_candidates(
+    user: Any,
+    trade: Trade,
+    price_source: PriceSource,
+    *,
+    lookback_days: int = 60,
+) -> "RollLink | None":
+    """Prior closed trades on the same underlying that an open option
+    position could be linked to as a roll — within `lookback_days` before
+    it opened, newest close first. None when the trade holds no live
+    option position."""
+    current = next(
+        (row for row in open_option_strategies(user, price_source) if row.trade == trade), None
+    )
+    if current is None or current.underlying is None:
+        return None
+    opened = current.opened_on
+    floor = opened - datetime.timedelta(days=lookback_days) if opened else None
+    candidates = [
+        row
+        for row in closed_option_strategies(user)
+        if row.underlying == current.underlying
+        and row.closed_on is not None
+        and (opened is None or row.closed_on <= opened)
+        and (floor is None or row.closed_on >= floor)
+    ]
+    candidates.sort(key=lambda row: row.closed_on or datetime.date.min, reverse=True)
+    primary_strike = current.legs[0].strike if current.legs else None
+    return RollLink(
+        trade=trade,
+        underlying=current.underlying,
+        strategy=current.strategy,
+        contracts=current.contracts,
+        strike=primary_strike,
+        opened_on=opened,
+        expiration=current.expiration,
+        initial_premium=current.initial_premium,
+        current_pnl=current.unrealized_pnl,
+        lookback_days=lookback_days,
+        candidates=candidates,
+    )

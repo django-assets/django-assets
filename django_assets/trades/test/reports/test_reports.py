@@ -980,3 +980,98 @@ def test_roll_candidates_none_without_chain_access(user, usd, accounts, spy):
             return None
 
     assert roll_candidates(trade, short_put, Marks({}), NoChain()) is None
+
+
+def test_roll_link_candidates_are_prior_closed_trades(user, usd, accounts, spy):
+    """The reference roll finder links a roll to PRIOR CLOSED trades on
+    the same underlying within a lookback window."""
+    from django_assets.trades.reports import roll_link_candidates
+
+    # Two earlier closed covered calls on SPY, one far older (outside 60d).
+    def closed_cc(strike, premium, realized, open_d, close_d):
+        cc = make_option(usd, spy, strike=strike, right="C", expiry=close_d)
+        t = Trade.objects.create(user=user, name=f"cc{strike}{open_d}")
+        t.assign(
+            book(
+                accounts,
+                usd,
+                ts=datetime.datetime.combine(open_d, datetime.time(14, 0), tzinfo=UTC),
+                position_legs=[(cc, -3)],
+                cash=premium,
+            ),
+            fraction=1,
+        )
+        debit = D(premium) - D(realized)
+        t.assign(
+            book(
+                accounts,
+                usd,
+                ts=datetime.datetime.combine(close_d, datetime.time(20, 0), tzinfo=UTC),
+                position_legs=[(cc, 3)],
+                cash=str(-debit),
+            ),
+            fraction=1,
+        )
+        return t
+
+    closed_cc("30", "193.46", "193.46", datetime.date(2026, 5, 20), datetime.date(2026, 6, 1))
+    closed_cc("20", "352.46", "352.46", datetime.date(2026, 5, 10), datetime.date(2026, 5, 22))
+    closed_cc(
+        "18", "99.00", "99.00", datetime.date(2026, 1, 5), datetime.date(2026, 1, 15)
+    )  # too old
+
+    # The current OPEN covered call opened 2026-06-15.
+    current_cc = make_option(usd, spy, strike="35", right="C", expiry=datetime.date(2026, 8, 21))
+    trade = Trade.objects.create(user=user, name="open cc")
+    trade.assign(
+        book(
+            accounts,
+            usd,
+            ts=datetime.datetime(2026, 6, 15, 14, 0, tzinfo=UTC),
+            position_legs=[(current_cc, -5)],
+            cash="647.44",
+        ),
+        fraction=1,
+    )
+    marks = Marks(
+        {
+            current_cc: OptionQuote(
+                price=D("1.35"),
+                currency=usd,
+                as_of=None,
+                source="t",
+                kind=PriceKind.DELAYED,
+                delta=D("0.30"),
+            ),
+            spy: PriceQuote(
+                price=D("40"), currency=usd, as_of=None, source="t", kind=PriceKind.EOD
+            ),
+        }
+    )
+    link = roll_link_candidates(user, trade, marks, lookback_days=60)
+    assert link is not None
+    assert link.underlying == spy
+    assert link.contracts == 5
+    assert link.strike == D("35")
+    assert link.opened_on == datetime.date(2026, 6, 15)
+    assert link.initial_premium == D("647.44")
+    assert link.current_pnl is not None  # unrealized, from marks
+    # candidates: closed CCs on SPY within 60d before the open, newest first
+    cands = link.candidates
+    assert [c.legs[0].strike for c in cands] == [D("30"), D("20")]  # Jan one outside lookback
+    assert cands[0].initial_premium == D("193.46")
+    assert cands[0].realized_pnl == D("193.46")
+    assert cands[0].contracts == 3
+    assert cands[0].opened_on == datetime.date(2026, 5, 20)
+    assert cands[0].closed_on == datetime.date(2026, 6, 1)
+
+
+def test_roll_link_none_for_non_option_trade(user, usd, accounts, spy):
+    from django_assets.trades.reports import roll_link_candidates
+
+    trade = Trade.objects.create(user=user, name="shares only")
+    trade.assign(
+        book(accounts, usd, ts=OPEN_TS, position_legs=[(spy, 100)], cash="-8500.00"),
+        fraction=1,
+    )
+    assert roll_link_candidates(user, trade, Marks({})) is None
