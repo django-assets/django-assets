@@ -80,11 +80,57 @@
           {% if row.moneyness %}<span class="{% if row.moneyness == 'ITM' %}neg{% else %}pos{% endif %}">({{ row.moneyness }})</span>{% endif %}
         </td>
         <td class="num">
-          <button type="button" class="icon-btn share-btn tip-host" aria-label="Copy position summary"
-                  data-share="{{ row.underlying.code }} {{ row.strategy|strategy_label }} ({{ row.contracts }}) exp {{ row.expiration|date:'Y-m-d' }} | PnL {{ row.pnl_pct|pct0 }} | Market Value {{ row.market_value|money }} | Delta {{ row.delta_pct|pct1 }} | {{ row.moneyness_pct|pct0 }} ({{ row.moneyness }})">
+          <button type="button" class="icon-btn share-btn tip-host" aria-label="Share position"
+                  data-dialog="share-dialog-{{ row.trade.pk }}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
-            <span class="tooltip">Copy position summary</span>
+            <span class="tooltip">Share position</span>
           </button>
+          <dialog class="app-dialog share-dialog" id="share-dialog-{{ row.trade.pk }}">
+            <div class="dialog-head">
+              <h3>Share Position</h3>
+              <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+            </div>
+            <p class="share-subtitle">Download an image of this position to share on social media</p>
+            <div class="share-card-wrap">
+              <div class="share-card">
+                <div class="share-symbol">${{ row.underlying.code }}</div>
+                <div class="share-strategy">{{ row.strategy|strategy_label }}</div>
+                <div class="share-terms">{% for leg in entry.legs %}{{ leg.strike|strike }}{% if not forloop.last %}/{% endif %}{% endfor %}{% if row.expiration %} exp {{ row.expiration|date:"Y-m-d" }}{% endif %}</div>
+                <div class="share-stats">
+                  <div class="share-stat">
+                    <div class="share-stat-label">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+                      Current PnL
+                    </div>
+                    {% if row.rolls %}
+                    <div class="share-stat-value share-pnl-value {{ row.pnl_pct_incl_rolls|sign_class }}">{{ row.pnl_incl_rolls|money }} ({{ row.pnl_pct_incl_rolls|pct0 }})</div>
+                    {% else %}
+                    <div class="share-stat-value share-pnl-value {{ row.pnl_pct|sign_class }}">{{ row.unrealized_pnl|money }} ({{ row.pnl_pct|pct0 }})</div>
+                    {% endif %}
+                  </div>
+                  <div class="share-stat">
+                    <div class="share-stat-label">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>
+                      AROI (init/now)
+                    </div>
+                    <div class="share-stat-value share-aroi-value">{{ row.aroi_initial|pct0 }}/{{ row.aroi_now|pct0 }}</div>
+                    <div class="share-stat-sub">Annualized Return</div>
+                  </div>
+                </div>
+                <div class="share-grid">
+                  <div class="share-cell"><div class="share-k">Open</div><div class="share-v">{{ row.opened_on|date:"Y-m-d" }}</div></div>
+                  <div class="share-cell"><div class="share-k">Contracts</div><div class="share-v">{{ row.contracts }}</div></div>
+                  <div class="share-cell"><div class="share-k">Initial Premium</div><div class="share-v">{{ row.initial_premium|money }}</div></div>
+                  <div class="share-cell"><div class="share-k">Delta</div><div class="share-v">{{ row.delta_pct|pct1 }}</div></div>
+                </div>
+                <div class="share-foot">Powered by OptionTracker demo</div>
+              </div>
+            </div>
+            <div class="dialog-actions">
+              <button type="button" class="btn dialog-close">Cancel</button>
+              <button type="button" class="btn btn-primary share-download" data-symbol="{{ row.underlying.code }}">Download Image</button>
+            </div>
+          </dialog>
         </td>
       </tr>
       <tr class="detail-row" hidden>

@@ -572,7 +572,6 @@ tr.open .row-chev { transform: rotate(90deg); }
 .sym-price { color: var(--muted); font-size: 12px; }
 
 .share-btn { color: var(--muted); }
-.share-btn.copied { color: var(--green); }
 
 /* detail panel */
 
@@ -715,6 +714,113 @@ th:last-child .tooltip, td:last-child .tooltip { left: auto; right: -6px; transf
 .dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .dialog-head h3 { margin: 0; font-size: 15px; }
 .app-dialog .legs-table { margin-top: 12px; }
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+}
+.dialog-actions .btn { font-size: 13px; }
+
+/* Share Position dialog: the card keeps fixed dark colors (it is the
+   exact artwork the Download Image button rasterizes to a PNG). */
+
+.share-dialog { width: 560px; max-width: 92vw; text-align: left; }
+.share-subtitle { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+.share-card-wrap {
+  margin-top: 14px;
+  padding: 22px 26px;
+  border-radius: 12px;
+  background: #0b0d10;
+}
+.share-card {
+  background: #14171c;
+  border: 1px solid #262b33;
+  border-radius: 18px;
+  padding: 26px 30px;
+  color: #e7eaf0;
+}
+.share-card .pos { color: #22c55e; }
+.share-card .neg { color: #ef4444; }
+.share-symbol { font-size: 30px; font-weight: 700; }
+.share-strategy { font-size: 15px; font-weight: 600; margin-top: 8px; }
+.share-terms { color: #8b93a1; font-size: 13.5px; margin-top: 4px; }
+.share-stats { display: flex; gap: 14px; margin-top: 18px; }
+.share-stat {
+  flex: 1;
+  background: #1a1e25;
+  border: 1px solid #262b33;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.share-stat-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #8b93a1;
+  font-size: 12px;
+  font-weight: 600;
+}
+.share-stat-label svg { color: #22c55e; flex: none; }
+.share-stat-value { font-size: 19px; font-weight: 700; margin-top: 8px; }
+.share-aroi-value { color: #22c55e; }
+.share-stat-sub { color: #8b93a1; font-size: 10.5px; margin-top: 4px; }
+.share-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 14px;
+  margin-top: 20px;
+}
+.share-k {
+  color: #8b93a1;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.share-v { font-size: 15px; font-weight: 600; margin-top: 3px; }
+.share-foot {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid #262b33;
+  text-align: center;
+  color: #8b93a1;
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+
+/* Start Tutorial: one-step spotlight tour. The spotlight box's oversized
+   box-shadow dims the page around the highlighted sidebar item. */
+
+.tour-overlay { position: fixed; inset: 0; z-index: 1200; }
+.tour-spotlight {
+  position: fixed;
+  z-index: 1201;
+  border: 2px solid #f59e0b;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 4px rgba(245, 158, 11, 0.35),
+    0 0 0 100vmax rgba(0, 0, 0, 0.65);
+  cursor: pointer;
+}
+.tour-popover {
+  position: fixed;
+  z-index: 1202;
+  width: 330px;
+  max-width: calc(100vw - 16px);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+}
+.tour-popover h4 { margin: 0 0 8px; font-size: 15px; padding-right: 24px; }
+.tour-popover p { margin: 0; color: var(--muted); font-size: 13px; }
+.tour-popover .tour-hint { margin-top: 12px; text-align: center; font-size: 12px; }
+.tour-close { position: absolute; top: 8px; right: 8px; }
 
 /* wheel add-position CTA */
 
