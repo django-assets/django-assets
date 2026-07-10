@@ -332,6 +332,8 @@ class MarketDataPriceSource:
             underlying_price=dec("underlyingPrice"),
             open_interest=dec("openInterest"),
             volume=dec("volume"),
+            intrinsic_value=dec("intrinsicValue"),
+            extrinsic_value=dec("extrinsicValue"),
         )
 
     @staticmethod

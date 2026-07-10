@@ -672,3 +672,128 @@ def test_closed_strategy_assigned_flag(user, usd, accounts, spy):
     assert row.realized_pnl == D("120.00")
     # And the history label is the option structure, not "stock".
     assert row.strategy == "short_put"
+    leg = row.legs[0]
+    # No closing FILL exists: the strike cash is not an option price.
+    assert leg.close_price is None
+    assert leg.status == "assigned"
+
+    from django_assets.trades.reports import assignments, wheel_campaigns
+
+    rows_a = assignments(user)
+    assert len(rows_a) == 1
+    a = rows_a[0]
+    assert a.underlying == spy
+    assert a.shares == D("100")
+    assert a.strike == D("60")
+    assert a.right == "P"
+    assert a.assigned_on == datetime.date(2026, 6, 19)
+
+    # The assignment's strike cash is the campaign's share basis.
+    campaign = next(c for c in wheel_campaigns(user, Marks({})) if c.trade == trade)
+    assert campaign.cost_basis == D("60.00")
+    assert campaign.shares == D("100")
+    # premium collected adjusts: (6000 − 120) / 100
+    assert campaign.adjusted_cost == D("58.80")
+
+
+def test_closed_leg_expired_status(user, usd, accounts, spy):
+    csp = make_option(usd, spy, strike="10", right="P", expiry=datetime.date(2026, 6, 19))
+    trade = Trade.objects.create(user=user, name="expired csp")
+    trade.assign(
+        book(
+            accounts,
+            usd,
+            ts=datetime.datetime(2026, 6, 1, 14, 0, tzinfo=UTC),
+            position_legs=[(csp, -3)],
+            cash="90.00",
+        ),
+        fraction=1,
+    )
+    trade.assign(
+        book(
+            accounts,
+            usd,
+            ts=datetime.datetime(2026, 6, 19, 20, 0, tzinfo=UTC),
+            position_legs=[(csp, 3)],
+        ),
+        fraction=1,
+    )
+    row = next(r for r in closed_option_strategies(user) if r.trade == trade)
+    assert row.legs[0].status == "expired"  # zero-cash close on expiry day
+
+
+def test_open_strategy_extrinsic_value(user, pcs, marks, spy, usd):
+    # marks fixture has no extrinsic; rebuild quotes with it
+    quotes = dict(marks.quotes)
+    short_quote = quotes[pcs["short"]]
+    from dataclasses import replace
+
+    quotes[pcs["short"]] = replace(short_quote, extrinsic_value=D("0.37"))
+    quotes[pcs["long"]] = replace(quotes[pcs["long"]], extrinsic_value=D("1.42"))
+    row = open_option_strategies(user, Marks(quotes))[0]
+    # Σ signed qty × extrinsic × multiplier: −5×0.37×100 + 5×1.42×100
+    assert row.extrinsic_value == D("525.00")
+
+
+def test_wheel_campaign_history_rows(user, usd, accounts, spy):
+    cc = make_option(usd, spy, strike="90", right="C")
+    old_cc = make_option(usd, spy, strike="85", right="C", expiry=datetime.date(2026, 6, 19))
+    trade = Trade.objects.create(user=user, name="wheel hist")
+    t0 = datetime.datetime(2026, 6, 1, 14, 0, tzinfo=UTC)
+    trade.assign(
+        book(accounts, usd, ts=t0, position_legs=[(spy, 100)], cash="-8500.00"), fraction=1
+    )
+    trade.assign(
+        book(accounts, usd, ts=t0, position_legs=[(old_cc, -1)], cash="120.00"), fraction=1
+    )
+    trade.assign(
+        book(
+            accounts,
+            usd,
+            ts=datetime.datetime(2026, 6, 19, 20, 0, tzinfo=UTC),
+            position_legs=[(old_cc, 1)],
+        ),
+        fraction=1,
+    )
+    trade.assign(
+        book(
+            accounts,
+            usd,
+            ts=datetime.datetime(2026, 6, 22, 14, 0, tzinfo=UTC),
+            position_legs=[(cc, -1)],
+            cash="323.00",
+        ),
+        fraction=1,
+    )
+    campaign = next(c for c in wheel_campaigns(user, Marks({})) if c.trade == trade)
+    assert campaign.total_premium == D("443.00")  # 120 + 323
+    history = campaign.history
+    assert len(history) == 2
+    expired = next(h for h in history if h.instrument == old_cc)
+    assert expired.status == "expired"
+    assert expired.initial_premium == D("120.00")
+    assert expired.realized_pnl == D("120.00")
+    live = next(h for h in history if h.instrument == cc)
+    assert live.status == "open"
+    assert live.initial_premium == D("323.00")
+
+
+def test_equity_holdings_report(user, usd, accounts, spy):
+    from django_assets.trades.reports import equity_holdings
+
+    book(accounts, usd, ts=OPEN_TS, position_legs=[(spy, 100)], cash="-8500.00")
+    marks = Marks(
+        {
+            spy: PriceQuote(
+                price=D("90.00"), currency=usd, as_of=None, source="t", kind=PriceKind.EOD
+            )
+        }
+    )
+    rows = equity_holdings(user, marks, accounts=[accounts["cash"], accounts["holdings"]])
+    assert len(rows) == 1
+    holding = rows[0]
+    assert holding.instrument == spy
+    assert holding.shares == D("100")
+    assert holding.cost_basis == D("85.00")
+    assert holding.market_value == D("9000.00")
+    assert holding.pnl_pct == (D("90.00") - D("85.00")) / D("85.00")

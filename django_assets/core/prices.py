@@ -118,6 +118,8 @@ class OptionQuote(PriceQuote):
     underlying_price: Decimal | None = None
     open_interest: Decimal | None = None
     volume: Decimal | None = None
+    intrinsic_value: Decimal | None = None
+    extrinsic_value: Decimal | None = None
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -130,6 +132,8 @@ class OptionQuote(PriceQuote):
             "underlying_price",
             "open_interest",
             "volume",
+            "intrinsic_value",
+            "extrinsic_value",
         ):
             value = getattr(self, name)
             if value is not None:

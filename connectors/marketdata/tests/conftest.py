@@ -65,6 +65,8 @@ def vendor():
                 "theta": "-0.135",
                 "vega": "0.842",
                 "underlyingPrice": "751.71",
+                "intrinsicValue": "0.00",
+                "extrinsicValue": mark,
                 "openInterest": 3400 + index,
                 "volume": 120 + index,
             }
@@ -82,6 +84,8 @@ def vendor():
         "theta": "-0.133",
         "vega": "0.844",
         "underlyingPrice": "752.40",
+        "intrinsicValue": "0.40",
+        "extrinsicValue": "11.71",
         "openInterest": 3406,
         "volume": 57,
     }

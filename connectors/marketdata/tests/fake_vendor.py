@@ -248,6 +248,8 @@ class FakeVendor:
             "underlyingPrice",
             "openInterest",
             "volume",
+            "intrinsicValue",
+            "extrinsicValue",
         )
         body: dict = {"s": "ok", "updated": [r["updated"] for r in rows]}
         for key in keys:

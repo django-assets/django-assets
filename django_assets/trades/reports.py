@@ -108,6 +108,7 @@ class OpenStrategy:
     pnl_pct: Decimal | None
     pnl_pct_incl_rolls: Decimal | None  # (unrealized + realized rolls) / premium incl. rolls
     delta_pct: Decimal | None
+    extrinsic_value: Decimal | None  # Σ signed qty × leg extrinsic × multiplier
     moneyness: str | None  # "ITM" | "OTM"
     moneyness_pct: Decimal | None
     margin_estimate: Decimal
@@ -126,6 +127,7 @@ class ClosedLeg:
     open_price: Decimal | None  # derivable only from single-instrument fills
     close_price: Decimal | None
     closed_on: datetime.date | None
+    status: str = "closed"  # "closed" | "expired" | "assigned"
     fees: Decimal = Decimal(0)  # transaction fees pro-rated across touched legs
 
 
@@ -197,6 +199,21 @@ class FlowRow:
 
 
 @dataclass(frozen=True)
+class WheelHistoryRow:
+    """One option contract's life inside a wheel campaign."""
+
+    instrument: Instrument
+    right: str
+    strike: Decimal
+    contracts: Decimal
+    opened_on: datetime.date
+    closed_on: datetime.date | None
+    initial_premium: Decimal
+    realized_pnl: Decimal | None  # None while still open
+    status: str  # "open" | "closed" | "expired" | "assigned"
+
+
+@dataclass(frozen=True)
 class WheelCampaign:
     trade: Trade
     underlying: Instrument
@@ -207,6 +224,8 @@ class WheelCampaign:
     market_value: Decimal | None
     pnl: Decimal | None  # absolute, vs adjusted basis
     pnl_pct: Decimal | None  # vs adjusted cost
+    total_premium: Decimal
+    history: "list[WheelHistoryRow]"
     unpriced: "list[Instrument]"
 
 
@@ -554,6 +573,19 @@ def open_option_strategies(user: Any, price_source: PriceSource) -> "list[OpenSt
             else None
         )
 
+        extrinsic_acc = Decimal(0)
+        extrinsic_missing = not legs
+        for leg in legs:
+            quote = leg.quote
+            if not isinstance(quote, OptionQuote) or quote.extrinsic_value is None:
+                extrinsic_missing = True
+                break
+            qty = net[leg.instrument.pk]
+            extrinsic_acc = extrinsic_acc + leg.instrument.quantize_price(
+                qty * quote.extrinsic_value * leg.instrument.multiplier
+            )
+        extrinsic_total = None if extrinsic_missing else extrinsic_acc
+
         moneyness = moneyness_pct = None
         if primary is not None:
             underlying_price = None
@@ -604,6 +636,7 @@ def open_option_strategies(user: Any, price_source: PriceSource) -> "list[OpenSt
                 pnl_pct=pnl_pct,
                 pnl_pct_incl_rolls=pnl_pct_incl_rolls,
                 delta_pct=delta_pct,
+                extrinsic_value=extrinsic_total,
                 moneyness=moneyness,
                 moneyness_pct=moneyness_pct,
                 margin_estimate=margin,
@@ -637,10 +670,14 @@ def closed_option_strategies(user: Any) -> "list[ClosedStrategy]":
         # Per-transaction (not merged-event) single-instrument fills give
         # per-leg prices even when a combo is booked as per-leg fills.
         tx_prices: dict[tuple[int, bool], Decimal] = {}
+        leg_status: dict[int, str] = {}
         tx_walk: dict[int, Decimal] = defaultdict(Decimal)
         for tx_event in _transaction_events(trade):
             touched_tx = [iid for iid in tx_event.positions if iid in metas]
-            if len(touched_tx) == 1 and tx_event.positions[touched_tx[0]] != 0:
+            moves_shares = any(
+                iid not in metas and delta != 0 for iid, delta in tx_event.positions.items()
+            )
+            if len(touched_tx) == 1 and tx_event.positions[touched_tx[0]] != 0 and not moves_shares:
                 iid = touched_tx[0]
                 meta = metas[iid]
                 per = meta.instrument.quantize_price(
@@ -655,7 +692,18 @@ def closed_option_strategies(user: Any) -> "list[ClosedStrategy]":
                     tx_prices[(iid, False)] = per
             for iid_w, amt in tx_event.positions.items():
                 if iid_w in metas:
+                    before_w = tx_walk[iid_w]
                     tx_walk[iid_w] += amt
+                    if before_w != 0 and tx_walk[iid_w] == 0:
+                        # How did this leg end? Shares moved → assigned/
+                        # exercised; zero-cash close on/after expiry →
+                        # expired; else an ordinary closing fill.
+                        if moves_shares:
+                            leg_status[iid_w] = "assigned"
+                        elif tx_event.cash == 0 and tx_event.when.date() >= metas[iid_w].expiry:
+                            leg_status[iid_w] = "expired"
+                        else:
+                            leg_status[iid_w] = "closed"
         closed_on_by_iid: dict[int, datetime.date] = {}
         opened_on: datetime.date | None = None
         closed_on: datetime.date | None = None
@@ -706,6 +754,7 @@ def closed_option_strategies(user: Any) -> "list[ClosedStrategy]":
                 open_price=open_price.get(iid),
                 close_price=close_price.get(iid),
                 closed_on=closed_on_by_iid.get(iid),
+                status=leg_status.get(iid, "closed"),
                 fees=leg_fees[iid].quantize(Decimal("0.01")),
             )
             for iid, meta in sorted(metas.items(), key=lambda kv: (kv[1].expiry, kv[1].strike))
@@ -896,7 +945,7 @@ def premium_calendar(
     for trade, _net, metas in _trades_with_options(user):
         if not keep(metas):
             continue
-        for event in _events(trade):
+        for event in _transaction_events(trade):
             if not any(iid in metas for iid in event.positions):
                 continue
             when = event.when.date()
@@ -1019,6 +1068,50 @@ def pnl_flow(
     ]
 
 
+@dataclass(frozen=True)
+class Assignment:
+    """One exercise/assignment event: shares delivered against a strike."""
+
+    trade: Trade
+    underlying: Instrument
+    shares: Decimal
+    strike: Decimal
+    right: str
+    assigned_on: datetime.date
+
+
+def assignments(user: Any) -> "list[Assignment]":
+    """Share deliveries from option exercise/assignment, newest first."""
+    rows: list[Assignment] = []
+    for trade, _net, metas in _trades_with_options(user):
+        for event in _transaction_events(trade):
+            option_deltas = {iid: delta for iid, delta in event.positions.items() if iid in metas}
+            share_deltas = {
+                iid: delta
+                for iid, delta in event.positions.items()
+                if iid not in metas and delta != 0
+            }
+            if not option_deltas or not share_deltas:
+                continue
+            for iid, _delta in option_deltas.items():
+                meta = metas[iid]
+                for share_iid, share_delta in share_deltas.items():
+                    if share_iid != meta.underlying_id:
+                        continue
+                    rows.append(
+                        Assignment(
+                            trade=trade,
+                            underlying=meta.underlying,
+                            shares=abs(share_delta),
+                            strike=Decimal(meta.strike),
+                            right=meta.right,
+                            assigned_on=event.when.date(),
+                        )
+                    )
+    rows.sort(key=lambda row: row.assigned_on, reverse=True)
+    return rows
+
+
 # -- wheel ------------------------------------------------------------------------------------
 
 
@@ -1041,15 +1134,21 @@ def wheel_campaigns(user: Any, price_source: PriceSource) -> "list[WheelCampaign
 
         share_cost = Decimal(0)
         premiums = Decimal(0)
-        for event in _events(trade):
+        # Per-transaction granularity: distinct fills (buy-write pairs)
+        # keep their own cash even when they share a timestamp.
+        for event in _transaction_events(trade):
             option_touched = any(iid in metas for iid in event.positions)
             equity_touched = underlying.pk in event.positions
-            if equity_touched and not option_touched:
-                share_cost += -event.cash
-            elif option_touched and not equity_touched:
-                premiums += event.cash
+            option_cash = _option_event_cash(event, metas) if option_touched else Decimal(0)
+            if equity_touched:
+                # assignment policy: the non-option share of the event's
+                # cash (the strike payment) is share basis.
+                share_cost += -(event.cash - option_cash)
+            if option_touched:
+                premiums += option_cash
         if shares == 0:
             continue
+        history = _wheel_history(trade, metas)
         cost_basis = underlying.quantize_price(share_cost / shares)
         adjusted = underlying.quantize_price((share_cost - premiums) / shares)
 
@@ -1072,11 +1171,69 @@ def wheel_campaigns(user: Any, price_source: PriceSource) -> "list[WheelCampaign
                 market_value=market_value,
                 pnl=market_value - adjusted_basis_total if market_value is not None else None,
                 pnl_pct=pnl_pct,
+                total_premium=premiums,
+                history=history,
                 unpriced=[] if quote else [underlying],
             )
         )
     campaigns.sort(key=lambda campaign: campaign.underlying.code)
     return campaigns
+
+
+def _wheel_history(trade: Trade, metas: "dict[int, OptionMeta]") -> "list[WheelHistoryRow]":
+    """Per-contract lifecycle rows for a wheel campaign's options."""
+    rows: list[WheelHistoryRow] = []
+    walk: dict[int, Decimal] = defaultdict(Decimal)
+    peak: dict[int, Decimal] = defaultdict(Decimal)
+    opened: dict[int, datetime.date] = {}
+    closed: dict[int, datetime.date] = {}
+    premium: dict[int, Decimal] = defaultdict(Decimal)
+    cashflow: dict[int, Decimal] = defaultdict(Decimal)
+    status: dict[int, str] = {}
+    for event in _transaction_events(trade):
+        touched = [iid for iid in event.positions if iid in metas]
+        if not touched:
+            continue
+        moves_shares = any(
+            iid not in metas and delta != 0 for iid, delta in event.positions.items()
+        )
+        option_cash = _option_event_cash(event, metas)
+        share = option_cash / len(touched)
+        for iid in touched:
+            before = walk[iid]
+            walk[iid] += event.positions[iid]
+            peak[iid] = max(peak[iid], abs(walk[iid]))
+            cashflow[iid] += share
+            if before == 0 and walk[iid] != 0:
+                opened.setdefault(iid, event.when.date())
+                premium[iid] += share
+                status[iid] = "open"
+            elif before != 0 and walk[iid] == 0:
+                closed[iid] = event.when.date()
+                if moves_shares:
+                    status[iid] = "assigned"
+                elif event.cash == 0 and event.when.date() >= metas[iid].expiry:
+                    status[iid] = "expired"
+                else:
+                    status[iid] = "closed"
+    for iid, meta in sorted(metas.items(), key=lambda kv: (kv[1].expiry, kv[1].strike)):
+        if iid not in opened:
+            continue
+        is_open = status.get(iid) == "open"
+        rows.append(
+            WheelHistoryRow(
+                instrument=meta.instrument,
+                right=meta.right,
+                strike=Decimal(meta.strike),
+                contracts=peak[iid],
+                opened_on=opened[iid],
+                closed_on=closed.get(iid),
+                initial_premium=premium[iid],
+                realized_pnl=None if is_open else cashflow[iid],
+                status=status.get(iid, "open"),
+            )
+        )
+    return rows
 
 
 def wheel_total_pnl(campaigns: "list[WheelCampaign]") -> Decimal | None:
@@ -1223,3 +1380,80 @@ def account_value_series(
                 total += instrument.quantize_price(qty * carried * instrument.multiplier)
         out.append((day, total))
     return out
+
+
+@dataclass(frozen=True)
+class EquityHolding:
+    instrument: Instrument
+    shares: Decimal
+    cost_basis: Decimal | None  # per share, average cost
+    market_value: Decimal | None
+    pnl_pct: Decimal | None  # vs cost basis
+
+
+def equity_holdings(
+    user: Any, price_source: PriceSource, *, accounts: "list[Any]"
+) -> "list[EquityHolding]":
+    """Every stock/ETF position across the user-side accounts, with an
+    average-cost basis walk (assignment strike cash counts as basis)."""
+    from django_assets.core.models import TransactionLeg
+
+    account_ids = [account.pk for account in accounts]
+    legs = (
+        TransactionLeg.objects.filter(account_id__in=account_ids)
+        .select_related("instrument", "transaction")
+        .order_by("transaction__timestamp", "id")
+    )
+    tx_cash: dict[int, Decimal] = defaultdict(Decimal)
+    tx_positions: dict[int, list[tuple[Instrument, Decimal]]] = defaultdict(list)
+    order: list[int] = []
+    for leg in legs:
+        if leg.instrument.price_currency_id is None:
+            tx_cash[leg.transaction_id] += leg.amount
+        else:
+            if leg.transaction_id not in order:
+                order.append(leg.transaction_id)
+            tx_positions[leg.transaction_id].append((leg.instrument, leg.amount))
+
+    option_flags = _option_metas(
+        [inst.pk for deltas in tx_positions.values() for inst, _amt in deltas]
+    )
+    positions: dict[Instrument, Decimal] = defaultdict(Decimal)
+    basis: dict[Instrument, Decimal] = defaultdict(Decimal)
+    for tx_id in order:
+        equity_deltas = [
+            (inst, amt) for inst, amt in tx_positions[tx_id] if inst.pk not in option_flags
+        ]
+        if not equity_deltas:
+            continue
+        share = tx_cash[tx_id] / len(equity_deltas)
+        for inst, amount in equity_deltas:
+            before = positions[inst]
+            if before == 0 or (amount > 0) == (before > 0):
+                positions[inst] = before + amount
+                basis[inst] += -share
+            else:
+                closing = min(abs(amount), abs(before))
+                if before != 0:
+                    basis[inst] -= basis[inst] * closing / abs(before)
+                positions[inst] = before + amount
+
+    held = {inst: qty for inst, qty in positions.items() if qty != 0}
+    quotes = price_source.get_quotes(list(held)) if held else {}
+    rows: list[EquityHolding] = []
+    for inst, qty in held.items():
+        per_share = inst.quantize_price(basis[inst] / qty) if qty else None
+        quote = quotes.get(inst)
+        market_value = inst.quantize_price(qty * quote.price * inst.multiplier) if quote else None
+        pnl_pct = (quote.price - per_share) / per_share if quote is not None and per_share else None
+        rows.append(
+            EquityHolding(
+                instrument=inst,
+                shares=qty,
+                cost_basis=per_share,
+                market_value=market_value,
+                pnl_pct=pnl_pct,
+            )
+        )
+    rows.sort(key=lambda row: row.instrument.code)
+    return rows

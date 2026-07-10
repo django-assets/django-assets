@@ -123,6 +123,8 @@ def test_option_quote_delayed_carries_greeks(source, acme_call, usd):
     assert quote.delta == D("0.531")
     assert quote.underlying_price == D("752.40")
     assert quote.open_interest == D("3406")
+    assert quote.intrinsic_value == D("0.40")
+    assert quote.extrinsic_value == D("11.71")
     assert quote.currency == usd
 
 
