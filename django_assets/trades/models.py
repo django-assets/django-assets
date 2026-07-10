@@ -17,7 +17,7 @@ from django.db import transaction as db_transaction
 
 from django_assets.core.intake import to_decimal
 from django_assets.core.models import Instrument, Transaction, TransactionLeg
-from django_assets.core.queries import SupportsGetPrice
+from django_assets.core.prices import PriceSource
 from django_assets.trades.exceptions import OverAllocationError
 
 
@@ -461,13 +461,15 @@ class Trade(models.Model):
     def calculate_pnl(
         self,
         as_of: datetime.datetime | None = None,
-        price_source: "SupportsGetPrice | None" = None,
+        price_source: "PriceSource | None" = None,
     ) -> "dict[str, object]":
         """Realized from revenue/cost cash slices by average-cost walk;
         fee-category slices are already inside our allocator's net cash
         slices and are NOT re-subtracted (reported via get_summary).
-        Unrealized marks open positions via a PriceSource; None without
-        one — unpriced positions are surfaced, never zeroed."""
+        Unrealized marks open positions via a PriceSource (ADR-0039:
+        best-available quote for current, official close for dated);
+        None without one — unpriced positions are surfaced, never
+        zeroed."""
         allocations = TradeAllocation.objects.filter(trade_id__in=self._tree_pks()).select_related(
             "leg", "leg__transaction", "leg__instrument"
         )
@@ -550,7 +552,11 @@ class Trade(models.Model):
             for inst, pos in position.items():
                 if pos == 0:
                     continue
-                quote = price_source.get_price(inst, at=as_of)
+                quote = (
+                    price_source.get_quote(inst)
+                    if as_of is None
+                    else price_source.get_close(inst, as_of.date())
+                )
                 if quote is None:
                     unpriced.append(inst)
                     continue
