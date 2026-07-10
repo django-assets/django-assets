@@ -6,10 +6,11 @@
         <th>Symbol</th>
         <th class="num">Shares</th>
         <th class="num">Cost Basis <span class="info-dot">i<span class="tooltip">Average price paid per share, before option premiums.</span></span></th>
-        <th class="num">Adjusted Cost</th>
+        <th class="num">Adjusted Cost <span class="info-dot">i<span class="tooltip">Cost basis reduced by the option premiums collected on these shares — the true cost after the wheel.</span></span></th>
         <th class="num">Market Value</th>
         <th class="num">
           <a class="metric-toggle tip-host" hx-get="{{ pnl_toggle_url }}" hx-target="#wheel-table" hx-swap="outerHTML" hx-push-url="true" href="{{ pnl_toggle_url }}">{% if pnl_mode == 'usd' %}PnL ($){% else %}PnL (%){% endif %}<span class="tooltip">Switch between PnL (%) and PnL ($)</span></a>
+          <span class="info-dot">i<span class="tooltip">Profit or loss vs the adjusted cost basis.</span></span>
         </th>
       </tr>
     </thead>
