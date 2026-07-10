@@ -453,7 +453,34 @@ def calendar_view(request: HttpRequest) -> HttpResponse:
         ]
     elif view_mode == "week":
         periods = reports.realized_weeks(user, year, underlyings=[query] if query else None)
-        week_cards = [{"date": monday, "data": periods[monday]} for monday in sorted(periods)]
+        try:
+            quarter = int(request.GET.get("quarter", (month - 1) // 3 + 1))
+        except ValueError:
+            quarter = (month - 1) // 3 + 1
+        quarter = min(max(quarter, 1), 4)
+        # Enumerate EVERY ISO week overlapping the quarter (empty weeks
+        # render as $0.00, like the reference), Monday-keyed. Calendar
+        # enumeration is presentation; PnL comes from realized_weeks.
+        q_start = datetime.date(year, (quarter - 1) * 3 + 1, 1)
+        q_end_month = quarter * 3
+        q_end = (datetime.date(year, q_end_month, 1) + datetime.timedelta(days=31)).replace(
+            day=1
+        ) - datetime.timedelta(days=1)
+        first_monday = q_start - datetime.timedelta(days=q_start.weekday())
+        monday = first_monday
+        while monday <= q_end:
+            iso = monday.isocalendar()
+            week_cards.append(
+                {
+                    "date": monday,
+                    "iso_week": iso.week,
+                    "iso_year": iso.year,
+                    "data": periods.get(monday),  # None -> template renders $0.00
+                }
+            )
+            monday += datetime.timedelta(days=7)
+        context["quarter"] = quarter
+        context["quarter_options"] = [1, 2, 3, 4]
     else:
         months = reports.realized_months(user, year, underlyings=[query] if query else None)
         month_cards = [
@@ -473,7 +500,21 @@ def calendar_view(request: HttpRequest) -> HttpResponse:
             ("prev", prev_month.year, prev_month.month),
             ("next", next_month.year, next_month.month),
         )
-    else:  # Week/Month views: the arrows step whole years
+    elif view_mode == "week":  # step whole quarters
+        q = context["quarter"]
+        prev_q = (year - 1, 4) if q == 1 else (year, q - 1)
+        next_q = (year + 1, 1) if q == 4 else (year, q + 1)
+        targets = (("prev", prev_q), ("next", next_q))
+        nav_urls = {}
+        for name, (ty, tq) in targets:
+            params = request.GET.copy()
+            params["year"] = ty
+            params["quarter"] = tq
+            nav_urls[name] = "?" + params.urlencode()
+        this_q = (today.month - 1) // 3 + 1
+        next_disabled = next_q > (today.year, this_q)
+        targets = ()  # handled above
+    else:  # Month view: the arrows step whole years
         targets = (("prev", year - 1, month), ("next", year + 1, month))
     for name, target_year, target_month in targets:
         params = request.GET.copy()
@@ -483,7 +524,7 @@ def calendar_view(request: HttpRequest) -> HttpResponse:
     # Reference greys the forward arrow once it would step past today.
     if view_mode == "day":
         next_disabled = (next_month.year, next_month.month) > (today.year, today.month)
-    else:
+    elif view_mode == "month":
         next_disabled = year + 1 > today.year
     context.update(
         {

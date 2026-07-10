@@ -25,6 +25,19 @@
       </select>
     </label>
     {% endif %}
+    {% if view_mode == 'week' %}
+    <label class="select-box">
+      <select name="quarter" aria-label="Quarter"
+              hx-get="{% url 'optiontracker:calendar' %}"
+              hx-trigger="change"
+              hx-target="#calendar-body" hx-swap="outerHTML"
+              hx-include="#calendar-filters,#calendar-view-form" hx-push-url="true">
+        {% for option in quarter_options %}
+        <option value="{{ option }}" {% if option == quarter %}selected{% endif %}>Q{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
     <label class="select-box">
       <select name="year" aria-label="Year"
               hx-get="{% url 'optiontracker:calendar' %}"
@@ -74,15 +87,18 @@
   <div class="month-grid week-grid">
     {% for cell in week_cards %}
     <div class="month-card week-card">
+      <div class="month-card-kicker muted">WEEK {{ cell.iso_week }} • {{ cell.iso_year }}</div>
       <div class="month-card-name">Week of {{ cell.date|date:"M j" }}</div>
+      {% if cell.data.trades %}
       <div class="month-card-premium {{ cell.data.pnl|sign_class }}">{{ cell.data.pnl|money }}</div>
       <div class="month-card-trades muted">{{ cell.data.trades }} trade{{ cell.data.trades|pluralize }}</div>
       {% if cell.data.wins or cell.data.losses %}
       <div class="month-card-closed muted">Closed: <span class="pos">{{ cell.data.wins }}W</span> <span class="neg">{{ cell.data.losses }}L</span></div>
       {% endif %}
+      {% else %}
+      <div class="month-card-premium muted">$0.00</div>
+      {% endif %}
     </div>
-    {% empty %}
-    <p class="muted week-grid-empty">No closed trades in {{ month_date.year }}.</p>
     {% endfor %}
   </div>
   {% else %}
