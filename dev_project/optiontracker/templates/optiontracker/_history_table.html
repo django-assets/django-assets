@@ -1,11 +1,45 @@
 {% load tracker_format %}
 {% if is_htmx %}
 <div class="history-totals" id="history-totals" hx-swap-oob="true">
+  {% if assigned_only %}
+  <div>Total Assignments: <strong>{{ total_assignments }}</strong></div>
+  {% else %}
   <div>Total Strategies: <strong>{{ total_strategies }}</strong></div>
   <div>Total Realized PnL: <strong class="{{ stats.total_profit|sign_class }}">{{ stats.total_profit|money_signed }}</strong></div>
+  {% endif %}
 </div>
+<button type="button" id="history-strategy-btn" hx-swap-oob="true" class="btn dropdown-toggle" data-dropdown="history-strategy-menu" {% if assigned_only %}disabled{% endif %}>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></svg>
+  Strategy
+</button>
 {% endif %}
 <div id="history-table" class="table-wrap">
+  {% if assigned_only %}
+  <table class="data-table" aria-label="Assigned option trades">
+    <thead>
+      <tr>
+        <th>Symbol</th>
+        <th>Shares</th>
+        <th>Strike Price</th>
+        <th>Call / Put</th>
+        <th>Assigned Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in assignments %}
+      <tr>
+        <td class="sym-cell"><span class="sym-text"><span class="sym-link">{{ row.underlying.code }}</span></span></td>
+        <td>{{ row.shares|floatformat:"2" }}</td>
+        <td>{{ row.strike|strike }}</td>
+        <td>{{ row.right|right_label|upper }}</td>
+        <td>{{ row.assigned_on|date:"M j, Y" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="empty-row">No assignments match the selected filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
   <table class="data-table">
     <thead>
       <tr>
@@ -49,7 +83,7 @@
                   <td class="num">{{ leg.strike|plain_number }}</td>
                   <td class="num">{{ leg.open_price|money }}</td>
                   <td class="num">{{ leg.close_price|money }}</td>
-                  <td>Closed ({{ leg.contracts|floatformat:"0" }}, {{ leg.closed_on|date:"n/j/Y" }})</td>
+                  <td>{{ leg.status|capfirst }} ({{ leg.contracts|floatformat:"0" }}, {{ leg.closed_on|date:"n/j/Y" }})</td>
                   <td class="num">{{ leg.fees|money }}</td>
                 </tr>
                 {% endfor %}
@@ -59,17 +93,13 @@
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="6" class="empty-row">No closed strategies match the current filters.</td></tr>
+      <tr><td colspan="6" class="empty-row">No closed strategies match the selected filters.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  {% endif %}
   <div class="pager">
-    {% if page_urls.prev %}
-    <a class="btn" hx-get="{{ page_urls.prev }}" hx-target="#history-table" hx-swap="outerHTML" hx-push-url="true" href="{{ page_urls.prev }}">Prev</a>
-    {% endif %}
-    {% if page_urls.next %}
-    <a class="btn" hx-get="{{ page_urls.next }}" hx-target="#history-table" hx-swap="outerHTML" hx-push-url="true" href="{{ page_urls.next }}">Next</a>
-    {% endif %}
-    <span class="muted small">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {# Reference parity: a Next button exists but does nothing (all rows render on one page). #}
+    <button type="button" class="btn">Next</button>
   </div>
 </div>

@@ -1473,16 +1473,40 @@ def premium_months(
     user: Any, year: int, *, underlyings: "list[str] | None" = None
 ) -> "dict[int, CalendarDay]":
     """Monthly aggregates of the premium calendar for one year — the
-    calendar's Month view (Jan–Dec grid)."""
-    months: dict[int, CalendarDay] = {}
-    for month in range(1, 13):
-        days = premium_calendar(user, year, month, underlyings=underlyings)
-        if not days:
+    calendar's Month view (Jan–Dec grid). Single pass over the trades
+    (not 12 per-month derivations)."""
+    wanted = {code.upper() for code in underlyings} if underlyings else None
+
+    def keep(metas: "dict[int, OptionMeta]") -> bool:
+        if wanted is None:
+            return True
+        return any(meta.underlying.code.upper() in wanted for meta in metas.values())
+
+    months: dict[int, dict[str, Any]] = defaultdict(
+        lambda: {"net": Decimal(0), "events": 0, "wins": 0, "losses": 0}
+    )
+    for trade, _net, metas in _trades_with_options(user):
+        if not keep(metas):
             continue
-        months[month] = CalendarDay(
-            net_premium=sum((day.net_premium for day in days.values()), Decimal(0)),
-            events=sum(day.events for day in days.values()),
-            wins=sum(day.wins for day in days.values()),
-            losses=sum(day.losses for day in days.values()),
+        for event in _transaction_events(trade):
+            if not any(iid in metas for iid in event.positions):
+                continue
+            when = event.when.date()
+            if when.year != year:
+                continue
+            months[when.month]["net"] += _option_event_cash(event, metas) - event.fees
+            months[when.month]["events"] += 1
+    for row in closed_option_strategies(user):
+        if wanted is not None and (
+            row.underlying is None or row.underlying.code.upper() not in wanted
+        ):
+            continue
+        if row.closed_on is None or row.closed_on.year != year:
+            continue
+        months[row.closed_on.month]["wins" if row.net_profit > 0 else "losses"] += 1
+    return {
+        month: CalendarDay(
+            net_premium=data["net"], events=data["events"], wins=data["wins"], losses=data["losses"]
         )
-    return months
+        for month, data in months.items()
+    }

@@ -4,10 +4,14 @@
 {% block content %}
 <section class="card page-card">
   <div class="page-head">
-    <h1>Historical Positions <span class="badge-demo">Demo data</span></h1>
+    <h1>Historical Positions <span class="info-dot" title="Closed option strategies with per-leg fills, fees and close status.">i</span> <span class="badge-demo">Demo data</span></h1>
     <div class="history-totals" id="history-totals">
+      {% if assigned_only %}
+      <div>Total Assignments: <strong>{{ total_assignments }}</strong></div>
+      {% else %}
       <div>Total Strategies: <strong>{{ total_strategies }}</strong></div>
       <div>Total Realized PnL: <strong class="{{ stats.total_profit|sign_class }}">{{ stats.total_profit|money_signed }}</strong></div>
+      {% endif %}
     </div>
   </div>
 
@@ -21,7 +25,7 @@
              hx-include="#history-filters" hx-push-url="true">
     </label>
     <div class="dropdown">
-      <button type="button" class="btn dropdown-toggle" data-dropdown="history-strategy-menu">
+      <button type="button" id="history-strategy-btn" class="btn dropdown-toggle" data-dropdown="history-strategy-menu" {% if assigned_only %}disabled{% endif %}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></svg>
         Strategy
       </button>

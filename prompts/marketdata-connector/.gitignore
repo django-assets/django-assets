@@ -1,0 +1,2 @@
+# API token (also matched by the repo-root .gitignore) — never commit.
+.env

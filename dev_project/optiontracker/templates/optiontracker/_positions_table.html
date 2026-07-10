@@ -12,13 +12,17 @@
           <a hx-get="{{ sort_state.expiration.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.expiration.url }}">Expiration <span class="sort-arrow">{% if sort_state.expiration.active %}{% if sort_state.expiration.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
         </th>
         <th class="sortable num{% if sort_state.pnl.active %} sorted{% endif %}">
-          <a hx-get="{{ sort_state.pnl.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.pnl.url }}">PnL (%) <span class="sort-arrow">{% if sort_state.pnl.active %}{% if sort_state.pnl.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+          <a class="metric-toggle" title="Click to switch between PnL (%) and PnL ($)" hx-get="{{ pnl_toggle_url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ pnl_toggle_url }}">{% if pnl_mode == 'usd' %}PnL ($){% else %}PnL (%){% endif %}</a>
+          <a hx-get="{{ sort_state.pnl.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.pnl.url }}" aria-label="Sort by PnL"><span class="sort-arrow">{% if sort_state.pnl.active %}{% if sort_state.pnl.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
         </th>
         <th class="sortable num{% if sort_state.market_value.active %} sorted{% endif %}">
           <a hx-get="{{ sort_state.market_value.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.market_value.url }}">Market Value <span class="sort-arrow">{% if sort_state.market_value.active %}{% if sort_state.market_value.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+          <span class="info-dot" title="Cost to close the option legs at the current mid price.">i</span>
         </th>
         <th class="sortable num{% if sort_state.delta.active %} sorted{% endif %}">
-          <a hx-get="{{ sort_state.delta.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.delta.url }}">Delta (%) <span class="sort-arrow">{% if sort_state.delta.active %}{% if sort_state.delta.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+          <a class="metric-toggle" title="Click to switch between Delta (%) and Extrinsic ($)" hx-get="{{ metric_toggle_url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ metric_toggle_url }}">{% if metric == 'extrinsic' %}Extrinsic ($){% else %}Delta (%){% endif %}</a>
+          <a hx-get="{{ sort_state.delta.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.delta.url }}" aria-label="Sort by delta"><span class="sort-arrow">{% if sort_state.delta.active %}{% if sort_state.delta.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+          <span class="info-dot" title="Delta (%): the primary leg's probability-style delta. Extrinsic ($): time value remaining across the position's legs.">i</span>
         </th>
         <th class="sortable num{% if sort_state.moneyness.active %} sorted{% endif %}">
           <a hx-get="{{ sort_state.moneyness.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.moneyness.url }}">Moneyness <span class="sort-arrow">{% if sort_state.moneyness.active %}{% if sort_state.moneyness.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
@@ -47,15 +51,30 @@
           {% else %}&mdash;{% endif %}
         </td>
         <td class="num">
-          {% if row.rolls %}
-          <span class="{{ row.pnl_pct_incl_rolls|sign_class }}">{{ row.pnl_pct_incl_rolls|pct0 }}</span>
-          <span class="info-dot" title="PnL includes realized PnL from rolled selections. Expand the row to view details.">i</span>
+          {% if pnl_mode == 'usd' %}
+            {% if row.rolls %}
+            <span class="{{ row.pnl_incl_rolls|sign_class }}">{{ row.pnl_incl_rolls|money }}</span>
+            <span class="info-dot" title="PnL includes realized PnL from rolled selections. Expand the row to view details.">i</span>
+            {% else %}
+            <span class="{{ row.unrealized_pnl|sign_class }}">{{ row.unrealized_pnl|money }}</span>
+            {% endif %}
           {% else %}
-          <span class="{{ row.pnl_pct|sign_class }}">{{ row.pnl_pct|pct0 }}</span>
+            {% if row.rolls %}
+            <span class="{{ row.pnl_pct_incl_rolls|sign_class }}">{{ row.pnl_pct_incl_rolls|pct0 }}</span>
+            <span class="info-dot" title="PnL includes realized PnL from rolled selections. Expand the row to view details.">i</span>
+            {% else %}
+            <span class="{{ row.pnl_pct|sign_class }}">{{ row.pnl_pct|pct0 }}</span>
+            {% endif %}
           {% endif %}
         </td>
         <td class="num">{{ row.market_value|money }}</td>
-        <td class="num">{{ row.delta_pct|pct1 }}</td>
+        <td class="num">
+          {% if metric == 'extrinsic' %}
+          <span class="{{ row.extrinsic_value|sign_class }}">{{ row.extrinsic_value|money }}</span>
+          {% else %}
+          {{ row.delta_pct|pct1 }}
+          {% endif %}
+        </td>
         <td class="num">
           {% if row.moneyness_pct is not None %}{{ row.moneyness_pct|pct0 }}{% else %}&mdash;{% endif %}
           {% if row.moneyness %}<span class="{% if row.moneyness == 'ITM' %}neg{% else %}pos{% endif %}">({{ row.moneyness }})</span>{% endif %}
@@ -124,10 +143,10 @@
                 <tr><th>Side / Right</th><th class="num">Strike</th><th class="num">Price</th><th class="num">IV</th><th class="num">Delta</th><th class="num">Gamma</th><th class="num">Theta</th><th class="num">Vega</th></tr>
               </thead>
               <tbody>
-                {% for leg in row.legs|dictsortreversed:"side" %}
+                {% for leg in entry.legs %}
                 <tr>
                   <td>{{ leg.side|side_label }} {{ leg.right|right_label }}</td>
-                  <td class="num">{{ leg.strike|money }}</td>
+                  <td class="num">{{ leg.strike|strike }}</td>
                   <td class="num">{{ leg.quote.price|money }}</td>
                   <td class="num">{{ leg.quote.iv|pct2 }}</td>
                   <td class="num">{{ leg.quote.delta|greek }}</td>
@@ -166,7 +185,7 @@
       </tr>
       {% endwith %}
       {% empty %}
-      <tr><td colspan="8" class="empty-row">No open option positions match the current filters.</td></tr>
+      <tr><td colspan="8" class="empty-row">No open option positions match the selected filters.</td></tr>
       {% endfor %}
     </tbody>
   </table>

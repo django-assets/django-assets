@@ -797,3 +797,13 @@ def test_equity_holdings_report(user, usd, accounts, spy):
     assert holding.cost_basis == D("85.00")
     assert holding.market_value == D("9000.00")
     assert holding.pnl_pct == (D("90.00") - D("85.00")) / D("85.00")
+
+
+def test_premium_months_yearly_aggregate(user, closed):
+    from django_assets.trades.reports import premium_months
+
+    months = premium_months(user, 2026)
+    assert months[5].net_premium == D("608.36")  # May: open credit − fee
+    assert months[6].net_premium == D("-175.11")  # June: buyback − fee
+    assert months[6].wins == 1
+    assert 7 not in months

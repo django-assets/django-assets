@@ -74,6 +74,15 @@
       return;
     }
 
+    // Account menu: choosing an entry just closes the menu (a single
+    // demo account is always selected in this environment).
+    var accountItem = event.target.closest(".account-menu-item");
+    if (accountItem) {
+      var accountMenu = accountItem.closest(".dropdown-menu");
+      if (accountMenu) accountMenu.hidden = true;
+      return;
+    }
+
     var dropdownToggle = event.target.closest(".dropdown-toggle");
     if (dropdownToggle) {
       var menu = document.getElementById(dropdownToggle.getAttribute("data-dropdown"));

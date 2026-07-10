@@ -1,0 +1,27 @@
+{% load tracker_format %}
+{# Chart include — ALLOWED arithmetic zone (pixel geometry from tracker_charts). #}
+{% if empty %}
+<p class="empty-row">No closed trades in the selected window.</p>
+{% else %}
+<div class="chart-scroll">
+  <svg class="chart" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="Cumulative profits line chart">
+    {% for tick in ticks %}
+    <line class="gridline" x1="{{ pad_left }}" x2="{{ plot_right }}" y1="{{ tick.y }}" y2="{{ tick.y }}"/>
+    <text class="tick-label" x="{{ tick_x }}" y="{{ tick.y }}" text-anchor="end" dominant-baseline="middle">{{ tick.label }}</text>
+    {% endfor %}
+    {% for tick in x_ticks %}
+    <line class="gridline" x1="{{ tick.x }}" x2="{{ tick.x }}" y1="{{ pad_top }}" y2="{{ plot_bottom }}"/>
+    {% endfor %}
+    <line class="axis-zero" x1="{{ pad_left }}" x2="{{ plot_right }}" y1="{{ zero_y }}" y2="{{ zero_y }}"/>
+    <polygon class="area" points="{{ area }}"/>
+    <polyline class="line" points="{{ line }}" fill="none"/>
+    {% for tick in x_ticks %}
+    <text class="tick-label" x="{{ tick.x }}" y="{{ label_y }}" text-anchor="middle">{{ tick.label }}</text>
+    {% endfor %}
+    {% if goal_y is not None %}
+    <line class="goal-line" x1="{{ pad_left }}" x2="{{ plot_right }}" y1="{{ goal_y }}" y2="{{ goal_y }}"/>
+    <text class="tick-label goal-label" x="{{ plot_right }}" y="{{ goal_y }}" dy="-6" text-anchor="end">Goal {{ goal_label }}</text>
+    {% endif %}
+  </svg>
+</div>
+{% endif %}

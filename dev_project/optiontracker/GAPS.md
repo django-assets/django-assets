@@ -49,3 +49,15 @@ Grader round-1 additions (all resolved in the library):
 | 23 | Per-leg open/close prices for combos (reference parity) | Net-cash-only combos couldn't price legs | Same-timestamp event merge in `_events` + per-transaction price derivation (`_transaction_events`) |
 | 24 | Assigned CSPs in history must show the premium as realized (strike cash = share basis) | Naive Σ event cash counted the strike payment as an option loss | `_option_event_cash()`: assignment/exercise events attribute cash to the opened share position (same policy as calculate_pnl); premium calendar uses it too |
 | 25 | History label for assigned trades (whole-trade classification says "stock" once shares arrive) | classify_trade only | `_classify_option_opening()` fallback in `closed_option_strategies` — the label is the option structure at its opening event |
+
+Grader round-2 additions (library surface was extended before this round;
+one OPEN performance gap remains):
+
+| # | Needed by the app | Library had? | Resolution (library) |
+|---|-------------------|--------------|----------------------|
+| 26 | History "Assigned" table (per-assignment rows) | Added this round | `Assignment` / `assignments(user)` |
+| 27 | Wheel expanded row (total premium + per-contract lifecycle w/ status) | Added this round | `WheelCampaign.total_premium`, `.history` (`WheelHistoryRow.status`) |
+| 28 | Equity Positions page | Added this round | `EquityHolding` (incl. `.pnl`) / `equity_holdings()` |
+| 29 | Calendar Month view (Jan–Dec aggregates) | Added this round | `premium_months(user, year, underlyings=…)` |
+| 30 | Header toggles PnL ($) / Extrinsic ($); leg close status | Added this round | `OpenStrategy.pnl_incl_rolls`, `.extrinsic_value`; `ClosedLeg.status` |
+| 31 | **OPEN**: Month view render cost | `premium_months()` re-derives `closed_option_strategies` once per month (12× per render, ~30 s on the demo book) | Needs a single-pass yearly aggregate in the library; `<!-- GAP -->` marker left in `_calendar_body.html` |

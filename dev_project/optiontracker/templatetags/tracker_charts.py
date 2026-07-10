@@ -122,6 +122,94 @@ def profit_bar_chart(profit: dict, mode: str = "monthly", goal: object = None) -
     }
 
 
+@register.inclusion_tag("optiontracker/charts/cumulative_chart.html")
+def cumulative_profit_chart(
+    daily_cumulative: list, mode: str = "weekly", goal: object = None
+) -> dict:
+    """Cumulative-profit line with area fill (the Cumulative Profits
+    card's default look): PerformanceStats.daily_cumulative IS the
+    running-profit curve; `mode` only picks the x-axis bucket labels
+    (month names vs week starts). The goal input draws a dashed line."""
+    width, height = 860.0, 300.0
+    pad_left, pad_right, pad_top, pad_bottom = 64.0, 16.0, 16.0, 28.0
+    plot_w = width - pad_left - pad_right
+    plot_h = height - pad_top - pad_bottom
+
+    try:
+        goal_value = float(goal) if goal not in (None, "") else None
+    except (TypeError, ValueError):
+        goal_value = None
+    if goal_value is not None and goal_value <= 0:
+        goal_value = None
+
+    if not daily_cumulative:
+        return {"width": width, "height": height, "empty": True}
+
+    days = [day.toordinal() for day, _value in daily_cumulative]
+    x_low, x_high = min(days), max(days)
+    if x_high == x_low:
+        x_high = x_low + 1
+    values = [float(value) for _day, value in daily_cumulative]
+    low = min(0.0, *values)
+    high = max(0.0, *values)
+    if goal_value is not None:
+        high = max(high, goal_value)
+        low = min(low, goal_value)
+    if high == low:
+        high = low + 1.0
+
+    def x_of(ordinal: int) -> float:
+        return pad_left + (ordinal - x_low) / (x_high - x_low) * plot_w
+
+    def y_of(value: float) -> float:
+        return pad_top + (high - value) / (high - low) * plot_h
+
+    points = [(x_of(day.toordinal()), y_of(float(value))) for day, value in daily_cumulative]
+    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
+    baseline = y_of(max(0.0, low))
+    area = f"{points[0][0]:.1f},{baseline:.1f} " + line + f" {points[-1][0]:.1f},{baseline:.1f}"
+
+    ticks = [{"y": y_of(value), "label": _tick_label(value)} for value in _nice_ticks(low, high)]
+
+    # Bucket labels: one per month (monthly) or per ISO week (weekly),
+    # thinned so at most ~13 captions render.
+    seen: set = set()
+    x_ticks = []
+    for day, _value in daily_cumulative:
+        if mode == "monthly":
+            key = (day.year, day.month)
+            label = _MONTHS[day.month - 1]
+        else:
+            iso = day.isocalendar()
+            key = (iso[0], iso[1])
+            label = f"{day.month}/{day.day}"
+        if key in seen:
+            continue
+        seen.add(key)
+        x_ticks.append({"x": x_of(day.toordinal()), "label": label})
+    step = max(1, math.ceil(len(x_ticks) / 13))
+    x_ticks = x_ticks[::step]
+
+    return {
+        "width": width,
+        "height": height,
+        "empty": False,
+        "line": line,
+        "area": area,
+        "ticks": ticks,
+        "x_ticks": x_ticks,
+        "zero_y": y_of(0.0),
+        "goal_y": y_of(goal_value) if goal_value is not None else None,
+        "goal_label": _tick_label(goal_value) if goal_value is not None else None,
+        "pad_left": pad_left,
+        "pad_top": pad_top,
+        "plot_bottom": height - pad_bottom,
+        "tick_x": pad_left - 8.0,
+        "plot_right": width - pad_right,
+        "label_y": height - 8.0,
+    }
+
+
 @register.inclusion_tag("optiontracker/charts/line_chart.html")
 def cumulative_line_chart(daily_cumulative: list, account_values: list | None = None) -> dict:
     """Two report series on one time axis with DUAL y-axes (reference
@@ -348,7 +436,8 @@ def strategy_donut(strategy_counts: dict) -> dict:
     stroke = 34.0
     gap_deg = 2.2
 
-    items = sorted(strategy_counts.items(), key=lambda kv: strategy_label(kv[0]).lower())
+    # Legend/arc order: biggest strategy first (reference behavior).
+    items = sorted(strategy_counts.items(), key=lambda kv: (-kv[1], strategy_label(kv[0]).lower()))
     total = 0
     for _slug, count in items:
         total += count

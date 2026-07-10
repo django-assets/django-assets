@@ -1,10 +1,8 @@
 {% load tracker_format %}
 <div id="calendar-body">
   <form id="calendar-view-form" class="calendar-controls" autocomplete="off" onsubmit="return false">
-    <input type="hidden" name="year" value="{{ month_date.year }}">
-    <input type="hidden" name="month" value="{{ month_date.month }}">
     <label class="select-box">
-      <select name="view"
+      <select name="view" aria-label="Calendar view"
               hx-get="{% url 'optiontracker:calendar' %}"
               hx-trigger="change"
               hx-target="#calendar-body" hx-swap="outerHTML"
@@ -13,31 +11,45 @@
         <option value="month" {% if view_mode == 'month' %}selected{% endif %}>Month</option>
       </select>
     </label>
-    <a class="btn" href="{{ prev_url }}" aria-label="Previous month">
+    {% if view_mode == 'day' %}
+    <label class="select-box">
+      <select name="month" aria-label="Month"
+              hx-get="{% url 'optiontracker:calendar' %}"
+              hx-trigger="change"
+              hx-target="#calendar-body" hx-swap="outerHTML"
+              hx-include="#calendar-filters,#calendar-view-form" hx-push-url="true">
+        {% for option in month_options %}
+        <option value="{{ option.month }}" {% if option.month == month_date.month %}selected{% endif %}>{{ option|date:"F" }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label class="select-box">
+      <select name="year" aria-label="Year"
+              hx-get="{% url 'optiontracker:calendar' %}"
+              hx-trigger="change"
+              hx-target="#calendar-body" hx-swap="outerHTML"
+              hx-include="#calendar-filters,#calendar-view-form" hx-push-url="true">
+        {% for option in year_options %}
+        <option value="{{ option }}" {% if option == month_date.year %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <a class="btn" href="{{ prev_url }}" aria-label="Previous {% if view_mode == 'day' %}month{% else %}year{% endif %}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
     </a>
-    <div class="calendar-title">{{ month_date|date:"F Y" }}</div>
-    <a class="btn" href="{{ next_url }}" aria-label="Next month">
+    {% if next_disabled %}
+    <span class="btn btn-inert" aria-disabled="true" aria-label="Next {% if view_mode == 'day' %}month{% else %}year{% endif %}">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+    </span>
+    {% else %}
+    <a class="btn" href="{{ next_url }}" aria-label="Next {% if view_mode == 'day' %}month{% else %}year{% endif %}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
     </a>
+    {% endif %}
   </form>
 
   {% if view_mode == 'day' %}
-  <div class="day-list">
-    {% for entry in day_list %}
-    <div class="day-list-row">
-      <div class="day-list-date">{{ entry.date|date:"D, M j, Y" }}</div>
-      <div class="day-list-premium {{ entry.data.net_premium|sign_class }}">{{ entry.data.net_premium|money }}</div>
-      <div class="day-list-trades muted">{{ entry.data.events }} trade{{ entry.data.events|pluralize }}</div>
-      <div class="day-list-closed muted">
-        {% if entry.data.wins or entry.data.losses %}Closed: <span class="pos">{{ entry.data.wins }}W</span> <span class="neg">{{ entry.data.losses }}L</span>{% endif %}
-      </div>
-    </div>
-    {% empty %}
-    <p class="empty-row">No option activity this month.</p>
-    {% endfor %}
-  </div>
-  {% else %}
   <div class="calendar-grid">
     {% for name in weekday_names %}
     <div class="calendar-weekday">{{ name }}</div>
@@ -55,6 +67,23 @@
         {% endif %}
       </div>
       {% endfor %}
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="month-grid">
+    {% for cell in month_cards %}
+    <div class="month-card{% if cell.is_current %} current{% endif %}">
+      <div class="month-card-name">{{ cell.date|date:"M" }}</div>
+      {% if cell.data %}
+      <div class="month-card-premium {{ cell.data.net_premium|sign_class }}">{{ cell.data.net_premium|money }}</div>
+      <div class="month-card-trades muted">{{ cell.data.events }} trade{{ cell.data.events|pluralize }}</div>
+      {% if cell.data.wins or cell.data.losses %}
+      <div class="month-card-closed muted">Closed: <span class="pos">{{ cell.data.wins }}W</span> <span class="neg">{{ cell.data.losses }}L</span></div>
+      {% endif %}
+      {% else %}
+      <div class="month-card-premium muted">$0.00</div>
+      {% endif %}
+    </div>
     {% endfor %}
   </div>
   {% endif %}

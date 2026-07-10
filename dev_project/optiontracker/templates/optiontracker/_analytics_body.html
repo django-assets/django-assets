@@ -34,18 +34,24 @@
   <div class="chart-row">
     <div class="chart-card">
       <div class="chart-card-head">
-        <h3>Cumulative Profits</h3>
-        <div class="toggle-pill">
-          <a class="{% if mode != 'weekly' %}on{% endif %}" href="{{ mode_state.monthly }}"
-             hx-get="{{ mode_state.monthly }}" hx-target="#analytics-body" hx-swap="outerHTML" hx-push-url="true">Monthly</a>
-          <a class="{% if mode == 'weekly' %}on{% endif %}" href="{{ mode_state.weekly }}"
-             hx-get="{{ mode_state.weekly }}" hx-target="#analytics-body" hx-swap="outerHTML" hx-push-url="true">Weekly</a>
+        <h3>Cumulative Profits <span class="info-dot" title="Running total of realized profit from closed strategies. Flip the switch to see per-period bars instead.">i</span></h3>
+        <div class="chart-controls">
+          <a class="switch {% if chart == 'cumulative' %}on{% endif %}" role="switch" aria-checked="{% if chart == 'cumulative' %}true{% else %}false{% endif %}"
+             aria-label="Toggle cumulative line" title="Toggle cumulative line / per-period bars"
+             href="{{ chart_toggle_url }}" hx-get="{{ chart_toggle_url }}"
+             hx-target="#analytics-body" hx-swap="outerHTML" hx-push-url="true"><span class="switch-knob"></span></a>
+          <div class="toggle-pill">
+            <a class="{% if mode != 'weekly' %}on{% endif %}" href="{{ mode_state.monthly }}"
+               hx-get="{{ mode_state.monthly }}" hx-target="#analytics-body" hx-swap="outerHTML" hx-push-url="true">Monthly</a>
+            <a class="{% if mode == 'weekly' %}on{% endif %}" href="{{ mode_state.weekly }}"
+               hx-get="{{ mode_state.weekly }}" hx-target="#analytics-body" hx-swap="outerHTML" hx-push-url="true">Weekly</a>
+          </div>
         </div>
       </div>
       <form id="analytics-mode" autocomplete="off" onsubmit="return false">
         <input type="hidden" name="mode" value="{{ mode }}">
-        {% if mode == 'weekly' %}
-        <label class="goal-field">Weekly goal
+        <input type="hidden" name="chart" value="{{ chart }}">
+        <label class="goal-field">{% if mode == 'weekly' %}Weekly goal{% else %}Monthly goal{% endif %}
           <span class="goal-input">$
             <input type="number" name="goal" value="{{ goal }}" min="0" step="100" placeholder="0"
                    hx-get="{% url 'optiontracker:analytics' %}"
@@ -54,17 +60,18 @@
                    hx-include="#analytics-filters,#analytics-mode" hx-push-url="true">
           </span>
         </label>
-        {% endif %}
       </form>
-      {% if mode == 'weekly' %}
+      {% if chart == 'cumulative' %}
+        {% cumulative_profit_chart stats.daily_cumulative mode=mode goal=goal %}
+      {% elif mode == 'weekly' %}
         {% profit_bar_chart stats.weekly_profit mode='weekly' goal=goal %}
       {% else %}
-        {% profit_bar_chart stats.monthly_profit %}
+        {% profit_bar_chart stats.monthly_profit mode='monthly' goal=goal %}
       {% endif %}
     </div>
     <div class="chart-card">
       <div class="chart-card-head">
-        <h3>Option Profit vs Account Value</h3>
+        <h3>Option Profit vs Account Value <span class="info-dot" title="Green: cumulative option profit (right axis). Blue: total account value (left axis).">i</span></h3>
         <div class="legend">
           <span class="legend-dot legend-green"></span>Option cumulative profit
           <span class="legend-dot legend-accent"></span>Account value

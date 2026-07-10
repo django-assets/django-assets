@@ -4,38 +4,25 @@
 {% block content %}
 <section class="card page-card">
   <div class="page-head">
-    <h1>Equity Positions <span class="badge-demo">Demo data</span></h1>
-    <p class="page-desc">Share positions held in your accounts.</p>
+    <h1>Equity Positions <span class="info-dot" title="Stock and ETF holdings across your accounts, with average-cost basis.">i</span> <span class="badge-demo">Demo data</span></h1>
+    <p class="page-desc">View your stock and ETF holdings.</p>
   </div>
-  <div class="table-wrap">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Symbol</th>
-          <th class="num">Shares</th>
-          <th class="num">Market Value</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for entry in entries %}
-        {% with campaign=entry.campaign %}
-        <tr>
-          <td class="sym-cell">
-            <span class="sym-avatar">{{ campaign.underlying.code|slice:":1" }}</span>
-            <span class="sym-text">
-              <a class="sym-link" href="https://www.tradingview.com/chart/?symbol={{ campaign.underlying.code|urlencode }}" target="_blank" rel="noopener">{{ campaign.underlying.code }}</a>
-              {% if entry.quote %}<span class="sym-price">({{ entry.quote.price|money }})</span>{% endif %}
-            </span>
-          </td>
-          <td class="num">{{ campaign.shares|floatformat:"0" }}</td>
-          <td class="num">{{ campaign.market_value|money }}</td>
-        </tr>
-        {% endwith %}
-        {% empty %}
-        <tr><td colspan="3" class="empty-row">No equity positions.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+
+  <form id="equities-filters" class="filter-row" autocomplete="off" onsubmit="return false">
+    <label class="search-box">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="search" name="q" value="{{ query }}" placeholder="Search by symbol"
+             hx-get="{% url 'optiontracker:equities' %}"
+             hx-trigger="input changed delay:300ms, search"
+             hx-target="#equities-table" hx-swap="outerHTML"
+             hx-include="#equities-filters" hx-push-url="true">
+    </label>
+    <a class="btn" href="https://www.tradingview.com/" target="_blank" rel="noopener">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+      TradingView
+    </a>
+  </form>
+
+  {% include "optiontracker/_equities_table.html" %}
 </section>
 {% endblock %}

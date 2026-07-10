@@ -41,9 +41,19 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"/></svg>
         Start Tutorial
       </button>
-      <div class="account-picker">
+      <div class="account-picker dropdown">
         <div class="account-picker-label">Account</div>
-        <div class="account-select"><span class="account-chip">D</span> Demo <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></div>
+        <button type="button" class="account-select dropdown-toggle" data-dropdown="account-menu" aria-haspopup="menu"><span class="account-chip">D</span> Demo <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button>
+        <div class="dropdown-menu account-menu" id="account-menu" hidden role="menu">
+          <button type="button" class="account-menu-item" role="menuitem">
+            <span class="account-chip account-chip-all"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+            All accounts
+          </button>
+          <button type="button" class="account-menu-item selected" role="menuitem">
+            <span class="account-chip">D</span> Demo
+            <svg class="account-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+          </button>
+        </div>
       </div>
       <nav class="sidenav">
         <a href="{% url 'optiontracker:positions' %}" class="sidenav-item {% if nav == 'positions' %}active{% endif %}">

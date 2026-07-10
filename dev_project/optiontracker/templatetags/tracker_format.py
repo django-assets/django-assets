@@ -87,6 +87,15 @@ def money_abs(value: object) -> str:
 
 
 @register.filter
+def strike(value: object) -> str:
+    """Strike display ONLY: $6200.00 — currency with NO thousand
+    separators (reference renders strikes ungrouped)."""
+    if value is None:
+        return EM_DASH
+    return f"${Decimal(str(value)):.2f}"
+
+
+@register.filter
 def plain_number(value: object) -> str:
     """1,234.56 without a currency sign (history strike column)."""
     if value is None:

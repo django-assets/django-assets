@@ -1,14 +1,14 @@
 {% load tracker_format %}
 <section class="card summary-card" id="account-summary">
   <div class="summary-head">
-    <h2>Account Summary</h2>
+    <h2>Account Summary <span class="info-dot" title="Cash, equity and option values across your accounts, priced live.">i</span></h2>
     <button type="button" class="icon-btn summary-toggle" aria-label="Collapse account summary">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 15l-6-6-6 6"/></svg>
     </button>
   </div>
   <div class="summary-body">
     <div class="summary-item">
-      <span class="summary-label">Total Value</span>
+      <span class="summary-label">Total Value <span class="info-dot" title="Cash + equity + option value; the percentage is the return on net contributions.">i</span></span>
       <span class="summary-value">{{ summary.total_value|money }}{% if summary.total_return_pct is not None %} <span class="summary-return {{ summary.total_return_pct|sign_class }}">({% if summary.total_return_pct|sign_class == 'neg' %}&darr;{% else %}&uarr;{% endif %} {{ summary.total_return_pct|pct1_abs }})</span>{% endif %}</span>
     </div>
     <div class="summary-item">
@@ -20,7 +20,7 @@
       <span class="summary-value">{{ summary.equity_value|money }}</span>
     </div>
     <div class="summary-item">
-      <span class="summary-label">Cash</span>
+      <span class="summary-label">Cash <span class="info-dot" title="Settled cash balance across your accounts.">i</span></span>
       <span class="summary-value">{{ summary.cash|money }}</span>
     </div>
     <div class="summary-item">
