@@ -1,7 +1,7 @@
 // OptionTracker UI behavior: theme toggle, row expand/collapse, summary
-// collapse, dropdown menus, share-card image download, one-step tutorial
-// tour. Presentation only — every figure shown is copied verbatim from
-// server-rendered markup.
+// collapse, dropdown menus, share-card image download, the embedded
+// TradingView chart panel, and the multi-step tutorial tour. Presentation
+// only — every figure shown is copied verbatim from server-rendered markup.
 (function () {
   "use strict";
 
@@ -33,7 +33,36 @@
 
     var tutorialButton = event.target.closest(".tutorial-btn");
     if (tutorialButton) {
-      startTour();
+      showTourStep(0);
+      return;
+    }
+
+    // TradingView panel: toolbar chip toggles the embedded panel; the
+    // panel's own buttons expand to fullscreen / close; watchlist entries
+    // switch the charted symbol (all client-side, no server round-trip).
+    var tvToggle = event.target.closest("#tv-toggle");
+    if (tvToggle) {
+      var panel = document.getElementById("tv-panel");
+      if (panel) {
+        if (panel.hidden) openTvPanel();
+        else closeTvPanel();
+      }
+      return;
+    }
+    var tvClose = event.target.closest(".tv-close");
+    if (tvClose) {
+      closeTvPanel();
+      return;
+    }
+    var tvExpand = event.target.closest(".tv-expand");
+    if (tvExpand) {
+      var expandPanel = document.getElementById("tv-panel");
+      if (expandPanel) expandPanel.classList.toggle("fullscreen");
+      return;
+    }
+    var tvItem = event.target.closest(".tv-watch-item");
+    if (tvItem) {
+      selectTvSymbol(tvItem.textContent.trim());
       return;
     }
 
@@ -212,7 +241,7 @@
       parts.push('<text x="' + x + '" y="' + (y + 22) + '" font-family="' + font + '" font-size="15" font-weight="600" fill="' + text + '">' + esc(cell.value) + "</text>");
     });
     parts.push('<line x1="36" y1="396" x2="524" y2="396" stroke="#262b33"/>');
-    parts.push('<text x="280" y="428" text-anchor="middle" font-family="' + font + '" font-size="11" letter-spacing="3" fill="' + muted + '">' + esc(cardText(card, ".share-foot").toUpperCase()) + "</text>");
+    parts.push('<text x="280" y="428" text-anchor="middle" font-family="' + font + '" font-size="11" letter-spacing="3" fill="' + muted + '">' + esc(cardText(card, ".share-foot")) + "</text>");
     parts.push("</svg>");
     return { svg: parts.join(""), width: width, height: height };
   }
@@ -245,23 +274,235 @@
     image.src = url;
   }
 
-  // ---- Start Tutorial: one-step spotlight tour ----
-  // Dims the page, spotlights the Broker Connection sidebar item (the
-  // spotlight box's giant box-shadow does the dimming so the item stays
-  // bright), and shows a welcome popover. Clicking the spotlight follows
-  // the real link; clicking anywhere else (or the ✕) dismisses.
+  // ---- TradingView panel: official embed widgets, client-side only ----
+  // The chart is TradingView's Advanced Real-Time Chart embed (their
+  // standard external-embedding script fed a JSON config). The watchlist
+  // is a clone-side list of each position's underlying; clicking an entry
+  // re-embeds the chart with that symbol. If the widget script cannot
+  // load (offline dev) the panel shows a placeholder note instead.
+
+  var TV_EMBED_SRC = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+  var tvActiveSymbol = "";
+
+  function tvSymbols() {
+    var seen = {};
+    var symbols = [];
+    document.querySelectorAll("#positions-table .sym-link").forEach(function (link) {
+      var code = link.textContent.trim();
+      if (code && !seen[code]) {
+        seen[code] = true;
+        symbols.push(code);
+      }
+    });
+    return symbols;
+  }
+
+  function renderTvWatchlist(symbols) {
+    var list = document.querySelector("#tv-watchlist .tv-watchlist-items");
+    if (!list) return;
+    list.innerHTML = "";
+    symbols.forEach(function (code) {
+      var item = document.createElement("button");
+      item.type = "button";
+      item.className = "tv-watch-item" + (code === tvActiveSymbol ? " active" : "");
+      item.textContent = code;
+      list.appendChild(item);
+    });
+  }
+
+  function embedTvChart(symbol) {
+    var host = document.getElementById("tv-chart");
+    if (!host) return;
+    host.innerHTML = "";
+    var container = document.createElement("div");
+    container.className = "tradingview-widget-container";
+    var widget = document.createElement("div");
+    widget.className = "tradingview-widget-container__widget";
+    container.appendChild(widget);
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src = TV_EMBED_SRC;
+    script.async = true;
+    script.text = JSON.stringify({
+      autosize: true,
+      symbol: symbol,
+      interval: "D",
+      timezone: "Etc/UTC",
+      theme: "dark",
+      style: "1",
+      locale: "en",
+      allow_symbol_change: true,
+      support_host: "https://www.tradingview.com",
+    });
+    script.onerror = function () {
+      host.innerHTML =
+        '<div class="tv-placeholder"><strong>' + esc(symbol) + "</strong>" +
+        "<span>TradingView chart unavailable — the embed script could not load " +
+        "(offline). This frame hosts the official Advanced Chart widget when " +
+        "a network connection is available.</span></div>";
+    };
+    container.appendChild(script);
+    host.appendChild(container);
+  }
+
+  function selectTvSymbol(symbol) {
+    if (!symbol || symbol === tvActiveSymbol) return;
+    tvActiveSymbol = symbol;
+    document.querySelectorAll(".tv-watch-item").forEach(function (item) {
+      item.classList.toggle("active", item.textContent.trim() === symbol);
+    });
+    embedTvChart(symbol);
+  }
+
+  function openTvPanel() {
+    var panel = document.getElementById("tv-panel");
+    if (!panel) return;
+    var symbols = tvSymbols();
+    if (!tvActiveSymbol || symbols.indexOf(tvActiveSymbol) === -1) {
+      tvActiveSymbol = symbols[0] || "";
+    }
+    renderTvWatchlist(symbols);
+    panel.hidden = false;
+    embedTvChart(tvActiveSymbol || "AAPL");
+  }
+
+  function closeTvPanel() {
+    var panel = document.getElementById("tv-panel");
+    if (!panel) return;
+    panel.hidden = true;
+    panel.classList.remove("fullscreen");
+    var host = document.getElementById("tv-chart");
+    if (host) host.innerHTML = "";
+  }
+
+  // Filters/sort swap the table via htmx: refresh the watchlist so it
+  // keeps mirroring the visible positions while the panel is open.
+  document.addEventListener("htmx:afterSwap", function (event) {
+    if (!event.target || event.target.id !== "positions-table") return;
+    var panel = document.getElementById("tv-panel");
+    if (panel && !panel.hidden) renderTvWatchlist(tvSymbols());
+  });
+
+  // ---- Start Tutorial: multi-step spotlight tour ----
+  // Dims the page (the spotlight box's giant box-shadow does the dimming
+  // so the target stays bright) and walks a fixed set of steps with
+  // Next/Previous. Steps live on two pages; the current step index is
+  // kept in sessionStorage so the tour survives the step-1 -> step-2
+  // navigation (and back). ✕ or a click outside dismisses anywhere.
+
+  var TOUR_KEY = "optiontracker-tour-step";
+  var TOUR_STEPS = [
+    {
+      page: "positions",
+      target: '[data-tour="broker"]',
+      title: "Welcome to OptionTracker",
+      body: "Let's get you started. First, you'll need to connect your broker account to view your positions.",
+      hint: "Click the highlighted area to continue",
+      clickThrough: true,
+    },
+    {
+      page: "broker",
+      target: ".broker-tile",
+      title: "Connecting Your Broker",
+      body: "Click on a broker card to start connecting your account. This will open the connection flow.",
+      next: true,
+    },
+    {
+      page: "positions",
+      target: ".summary-card",
+      title: "Account Summary",
+      body: "Your total value, options and equity positions at a glance.",
+      previous: true,
+      next: true,
+    },
+    {
+      page: "positions",
+      target: "#positions-table",
+      title: "Live Positions Overview",
+      body: "Your open option strategies with live prices and greeks. Click a row to see per-leg details.",
+      previous: true,
+      next: true,
+    },
+    {
+      page: "positions",
+      target: "#tv-toggle",
+      title: "TradingView",
+      body: "Open an embedded chart panel for your symbols.",
+      previous: true,
+      next: true,
+    },
+    {
+      page: "positions",
+      target: "#strategy-dropdown",
+      title: "Filters",
+      body: "Narrow positions by strategy or symbol.",
+      previous: true,
+      next: true,
+    },
+  ];
+
+  function tourPage() {
+    return window.location.pathname.indexOf("/broker") !== -1 ? "broker" : "positions";
+  }
+
+  function tourPageUrl(page) {
+    var link = document.querySelector(page === "broker" ? '[data-tour="broker"]' : '[data-tour="positions"]');
+    return link ? link.href : null;
+  }
+
+  function clearTourStep() {
+    try {
+      sessionStorage.removeItem(TOUR_KEY);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function saveTourStep(index) {
+    try {
+      sessionStorage.setItem(TOUR_KEY, String(index));
+    } catch (e) {
+      /* ignore */
+    }
+  }
 
   function endTour() {
+    clearTourStep();
     document.querySelectorAll(".tour-overlay, .tour-spotlight, .tour-popover").forEach(function (node) {
       node.remove();
     });
   }
 
-  function startTour() {
-    endTour();
-    var target = document.querySelector('[data-tour="broker"]');
-    if (!target) return;
+  function removeTourNodes() {
+    document.querySelectorAll(".tour-overlay, .tour-spotlight, .tour-popover").forEach(function (node) {
+      node.remove();
+    });
+  }
+
+  function showTourStep(index) {
+    removeTourNodes();
+    if (index < 0 || index >= TOUR_STEPS.length) {
+      clearTourStep();
+      return;
+    }
+    var step = TOUR_STEPS[index];
+    saveTourStep(index);
+    if (step.page !== tourPage()) {
+      var url = tourPageUrl(step.page);
+      if (url) window.location.href = url;
+      return;
+    }
+    var target = document.querySelector(step.target);
+    if (!target) {
+      clearTourStep();
+      return;
+    }
+    target.scrollIntoView({ block: "center", inline: "nearest" });
     var rect = target.getBoundingClientRect();
+    // Clamp tall targets (the positions table) to the viewport so the
+    // spotlight ring stays fully visible.
+    var boxTop = Math.max(rect.top, 8);
+    var boxBottom = Math.min(rect.bottom, window.innerHeight - 8);
 
     var overlay = document.createElement("div");
     overlay.className = "tour-overlay";
@@ -269,35 +510,75 @@
 
     var spotlight = document.createElement("div");
     spotlight.className = "tour-spotlight";
-    spotlight.style.top = rect.top - 6 + "px";
+    spotlight.style.top = boxTop - 6 + "px";
     spotlight.style.left = rect.left - 6 + "px";
     spotlight.style.width = rect.width + 12 + "px";
-    spotlight.style.height = rect.height + 12 + "px";
-    spotlight.setAttribute("role", "button");
-    spotlight.setAttribute("aria-label", "Go to Broker Connection");
-    spotlight.addEventListener("click", function () {
-      endTour();
-      window.location.href = target.href;
-    });
+    spotlight.style.height = boxBottom - boxTop + 12 + "px";
+    if (step.clickThrough) {
+      spotlight.classList.add("clickable");
+      spotlight.setAttribute("role", "button");
+      spotlight.setAttribute("aria-label", "Go to " + step.title);
+      spotlight.addEventListener("click", function () {
+        removeTourNodes();
+        showTourStep(index + 1);
+      });
+    } else {
+      spotlight.style.pointerEvents = "none";
+    }
 
     var popover = document.createElement("div");
     popover.className = "tour-popover";
-    popover.innerHTML =
+    var html =
       '<button type="button" class="icon-btn tour-close" aria-label="Close tutorial">✕</button>' +
-      "<h4>Welcome to OptionTracker</h4>" +
-      "<p>Let's get you started. First, you'll need to connect your broker account to view your positions.</p>" +
-      '<p class="tour-hint">Click the highlighted area to continue</p>';
+      "<h4>" + esc(step.title) + "</h4>" +
+      "<p>" + esc(step.body) + "</p>";
+    if (step.hint) html += '<p class="tour-hint">' + esc(step.hint) + "</p>";
+    if (step.previous || step.next) {
+      html += '<div class="tour-nav">';
+      if (step.previous) html += '<button type="button" class="btn tour-prev">‹ Previous</button>';
+      if (step.next) html += '<button type="button" class="btn btn-primary tour-next">Next ›</button>';
+      html += "</div>";
+    }
+    popover.innerHTML = html;
     popover.querySelector(".tour-close").addEventListener("click", endTour);
+    var prevButton = popover.querySelector(".tour-prev");
+    if (prevButton) prevButton.addEventListener("click", function () { showTourStep(index - 1); });
+    var nextButton = popover.querySelector(".tour-next");
+    if (nextButton) {
+      nextButton.addEventListener("click", function () {
+        if (index + 1 >= TOUR_STEPS.length) endTour();
+        else showTourStep(index + 1);
+      });
+    }
 
     document.body.appendChild(overlay);
     document.body.appendChild(spotlight);
     document.body.appendChild(popover);
 
     var popRect = popover.getBoundingClientRect();
-    var top = rect.top - popRect.height - 14;
-    if (top < 8) top = rect.bottom + 14;
+    var top = boxTop - popRect.height - 14;
+    if (top < 8) top = Math.min(boxBottom + 14, window.innerHeight - popRect.height - 8);
     var left = Math.min(Math.max(rect.left + 8, 8), window.innerWidth - popRect.width - 8);
     popover.style.top = top + "px";
     popover.style.left = left + "px";
   }
+
+  // Resume a tour in progress after the cross-page navigation.
+  (function () {
+    var saved = null;
+    try {
+      saved = sessionStorage.getItem(TOUR_KEY);
+    } catch (e) {
+      /* ignore */
+    }
+    if (saved === null) return;
+    var index = parseInt(saved, 10);
+    if (isNaN(index)) {
+      clearTourStep();
+      return;
+    }
+    if (TOUR_STEPS[index] && TOUR_STEPS[index].page === tourPage()) {
+      showTourStep(index);
+    }
+  })();
 })();

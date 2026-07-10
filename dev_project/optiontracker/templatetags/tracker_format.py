@@ -96,6 +96,19 @@ def strike(value: object) -> str:
 
 
 @register.filter
+def strike_plain(value: object) -> str:
+    """Bare strike for the share-card terms line: no $ sign, trailing
+    zeros stripped — 305.00 -> '305', 292.50 -> '292.5' (reference
+    renders '190/185')."""
+    if value is None:
+        return EM_DASH
+    text = f"{Decimal(str(value)):f}"
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
+
+
+@register.filter
 def plain_number(value: object) -> str:
     """1,234.56 without a currency sign (history strike column)."""
     if value is None:

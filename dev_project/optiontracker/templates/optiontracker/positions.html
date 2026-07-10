@@ -2,6 +2,7 @@
 {% load tracker_format %}
 {% block title %}Option Positions — OptionTracker{% endblock %}
 {% block content %}
+<div class="positions-split" id="positions-split">
 <section class="card page-card">
   <div class="page-head">
     <h1>Option Positions <span id="pos-count">({{ count }})</span> <span class="badge-demo">Demo data</span> <span class="info-dot">i<span class="tooltip">Live option strategies priced from current quotes.</span></span></h1>
@@ -36,12 +37,29 @@
         {% endfor %}
       </div>
     </div>
-    <a class="btn" href="https://www.tradingview.com/" target="_blank" rel="noopener">
+    <button type="button" class="btn" id="tv-toggle" aria-label="Toggle TradingView panel">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
       TradingView
-    </a>
+    </button>
   </form>
 
   {% include "optiontracker/_positions_table.html" %}
 </section>
+
+<aside class="tv-panel" id="tv-panel" hidden aria-label="TradingView chart panel">
+  <div class="tv-panel-bar">
+    <button type="button" class="icon-btn tv-expand" aria-label="Expand TradingView panel to full screen">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+    </button>
+    <button type="button" class="icon-btn tv-close" aria-label="Close TradingView panel">✕</button>
+  </div>
+  <div class="tv-panel-body">
+    <div class="tv-chart" id="tv-chart"></div>
+    <div class="tv-watchlist" id="tv-watchlist">
+      <div class="tv-watchlist-title">Watchlist</div>
+      <div class="tv-watchlist-items"></div>
+    </div>
+  </div>
+</aside>
+</div>
 {% endblock %}

@@ -36,3 +36,35 @@ def demo_user() -> User:
 
 def user_accounts(user: User) -> list[Account]:
     return list(Account.objects.filter(owner=user, name__in=USER_ACCOUNT_NAMES))
+
+
+def warm_caches() -> None:
+    """Prime the price-source and report caches for the demo book so the
+    first page hits render warm (the cold cost is live vendor round-trips
+    for quotes, candle history, and per-instrument bound discovery).
+    Presentation-side plumbing only: it just calls the library."""
+    import datetime
+
+    from django_assets.trades import reports
+
+    try:
+        user = demo_user()
+        accounts = user_accounts(user)
+        source = price_source()
+        reports.open_option_strategies(user, source)
+        reports.account_summary(user, source, accounts=accounts)
+        reports.wheel_campaigns(user, source)
+        reports.equity_holdings(user, source, accounts=accounts)
+        today = datetime.date.today()
+        reports.account_value_series(
+            user, source, accounts=accounts, start=today - datetime.timedelta(days=180), end=today
+        )
+        reports.closed_option_strategies(user)
+    except Exception:  # noqa: BLE001 — warming is best-effort; pages still work cold
+        pass
+
+
+def warm_caches_async() -> None:
+    import threading
+
+    threading.Thread(target=warm_caches, name="optiontracker-warm", daemon=True).start()

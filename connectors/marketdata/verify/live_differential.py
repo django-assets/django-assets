@@ -132,7 +132,9 @@ def test_delayed_quote_matches_vendor(live_source, spy, raw_client):
         if quote.price in served:
             matched = True
             break
-    assert matched, f"connector price {quote.price} never among vendor-served values {sorted(served)}"
+    assert matched, (
+        f"connector price {quote.price} never among vendor-served values {sorted(served)}"
+    )
     assert quote.kind is PriceKind.DELAYED
     assert quote.as_of is not None and isinstance(quote.price, D)
     # Freshness: the delayed channel's stamp is recent during RTH.

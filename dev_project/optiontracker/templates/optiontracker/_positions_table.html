@@ -80,7 +80,7 @@
           {% if row.moneyness %}<span class="{% if row.moneyness == 'ITM' %}neg{% else %}pos{% endif %}">({{ row.moneyness }})</span>{% endif %}
         </td>
         <td class="num">
-          <button type="button" class="icon-btn share-btn tip-host" aria-label="Share position"
+          <button type="button" class="icon-btn share-btn tip-host" aria-label="Share this position"
                   data-dialog="share-dialog-{{ row.trade.pk }}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
             <span class="tooltip">Share position</span>
@@ -88,14 +88,13 @@
           <dialog class="app-dialog share-dialog" id="share-dialog-{{ row.trade.pk }}">
             <div class="dialog-head">
               <h3>Share Position</h3>
-              <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
             </div>
             <p class="share-subtitle">Download an image of this position to share on social media</p>
             <div class="share-card-wrap">
               <div class="share-card">
                 <div class="share-symbol">${{ row.underlying.code }}</div>
                 <div class="share-strategy">{{ row.strategy|strategy_label }}</div>
-                <div class="share-terms">{% for leg in entry.legs %}{{ leg.strike|strike }}{% if not forloop.last %}/{% endif %}{% endfor %}{% if row.expiration %} exp {{ row.expiration|date:"Y-m-d" }}{% endif %}</div>
+                <div class="share-terms">{% for leg in entry.legs %}{{ leg.strike|strike_plain }}{% if not forloop.last %}/{% endif %}{% endfor %}{% if row.expiration %} Expiration {{ row.expiration|date:"Y-m-d" }}{% endif %}</div>
                 <div class="share-stats">
                   <div class="share-stat">
                     <div class="share-stat-label">

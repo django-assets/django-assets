@@ -789,23 +789,22 @@ th:last-child .tooltip, td:last-child .tooltip { left: auto; right: -6px; transf
   color: #8b93a1;
   font-size: 11px;
   letter-spacing: 0.28em;
-  text-transform: uppercase;
 }
 
-/* Start Tutorial: one-step spotlight tour. The spotlight box's oversized
-   box-shadow dims the page around the highlighted sidebar item. */
+/* Start Tutorial: multi-step spotlight tour. The spotlight box's oversized
+   box-shadow dims the page around the highlighted element. */
 
 .tour-overlay { position: fixed; inset: 0; z-index: 1200; }
 .tour-spotlight {
   position: fixed;
   z-index: 1201;
-  border: 2px solid #f59e0b;
+  border: 2px solid rgb(249, 115, 22);
   border-radius: 12px;
   box-shadow:
-    0 0 0 4px rgba(245, 158, 11, 0.35),
+    0 0 0 4px rgba(249, 115, 22, 0.35),
     0 0 0 100vmax rgba(0, 0, 0, 0.65);
-  cursor: pointer;
 }
+.tour-spotlight.clickable { cursor: pointer; }
 .tour-popover {
   position: fixed;
   z-index: 1202;
@@ -821,6 +820,76 @@ th:last-child .tooltip, td:last-child .tooltip { left: auto; right: -6px; transf
 .tour-popover p { margin: 0; color: var(--muted); font-size: 13px; }
 .tour-popover .tour-hint { margin-top: 12px; text-align: center; font-size: 12px; }
 .tour-close { position: absolute; top: 8px; right: 8px; }
+.tour-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 14px; }
+.tour-nav .btn { font-size: 12.5px; padding: 6px 12px; }
+.tour-nav .tour-next { margin-left: auto; }
+
+/* TradingView split: the embedded chart panel opens beside the positions
+   card (client-side toggle only; the card reflows narrower). */
+
+.positions-split { display: flex; align-items: stretch; gap: 18px; min-width: 0; }
+.positions-split > .page-card { flex: 1 1 auto; min-width: 0; }
+.tv-panel {
+  flex: 0 0 55%;
+  min-width: 0;
+  min-height: 620px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #131722;
+  overflow: hidden;
+}
+.tv-panel[hidden] { display: none; }
+.tv-panel.fullscreen {
+  position: fixed;
+  inset: 14px;
+  z-index: 1100;
+  min-height: 0;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+}
+.tv-panel-bar { display: flex; justify-content: flex-end; gap: 4px; padding: 8px 10px; }
+.tv-panel-bar .icon-btn { color: #d1d4dc; }
+.tv-panel-body { flex: 1; display: flex; min-height: 0; }
+.tv-chart { flex: 1 1 auto; min-width: 0; }
+.tv-chart .tradingview-widget-container,
+.tv-chart .tradingview-widget-container__widget { height: 100%; }
+.tv-placeholder {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: #8b93a1;
+  font-size: 13px;
+}
+.tv-placeholder strong { color: #e7eaf0; font-size: 22px; }
+.tv-watchlist {
+  flex: 0 0 170px;
+  border-left: 1px solid #262b33;
+  padding: 10px;
+  overflow-y: auto;
+}
+.tv-watchlist-title { color: #e7eaf0; font-weight: 700; font-size: 14px; margin: 2px 4px 10px; }
+.tv-watch-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  margin-bottom: 2px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: #d1d4dc;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tv-watch-item:hover { background: rgba(255, 255, 255, 0.06); }
+.tv-watch-item.active { border-color: #3b82f6; color: #e7eaf0; }
 
 /* wheel add-position CTA */
 

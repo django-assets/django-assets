@@ -127,6 +127,20 @@ class MarketDataPriceSource:
         self._realtime_probed_at: datetime.datetime | None = None
         self._equity_bounds: dict[int, DateRange | None] = {}
         self._option_series: dict[int, dict[datetime.date, dict[str, Any]]] = {}
+        # Instance-lifetime caches (same posture as the series/bounds
+        # caches): the wide bound-discovery fetch doubles as the daily
+        # candle store, and symbol mapping is resolved once per
+        # instrument. Long-lived processes should wrap the source in
+        # CachedPriceSource and recycle it per their freshness policy.
+        self._daily: dict[int, dict[datetime.date, Candle]] = {}
+        self._mapped: dict[int, VendorSymbol | None] = {}
+
+    def _map(self, instrument: Instrument) -> VendorSymbol | None:
+        if instrument.pk not in self._mapped:
+            self._mapped[instrument.pk] = map_instrument(
+                instrument, currency_codes=self._currency_codes
+            )
+        return self._mapped[instrument.pk]
 
     # -- entitlement discovery ------------------------------------------------
 
@@ -239,8 +253,29 @@ class MarketDataPriceSource:
             return not isinstance(payload, NoData)
 
         bound: DateRange | None
-        if not year_has_data(last_session.year):
-            bound = None  # no candles at all this year: no archive to offer
+        # Fast path: daily candles have no range limit, so ONE wide
+        # request discovers the earliest session in a single round-trip
+        # (costs a few credits once per instrument; cached). Plans that
+        # cap history answer 402 — fall back to year-bisection, whose
+        # denials map the plan's floor honestly.
+        try:
+            wide = self._candles_payload(
+                symbol, datetime.date(_EARLIEST_PLAUSIBLE_YEAR, 1, 1), last_session
+            )
+        except MarketDataEntitlementError:
+            wide = None
+        if wide is not None:
+            if isinstance(wide, NoData):
+                bound = None  # vendor has no candles at all
+            else:
+                bound = DateRange(_session_of(wide["t"][0]), last_session)
+                # The discovery response IS the daily archive: keep it so
+                # closes/ohlcv/eod never re-fetch what we already hold.
+                self._daily[instrument.pk] = {
+                    candle.session: candle for candle in self._candles_from_payload(wide)
+                }
+        elif not year_has_data(last_session.year):
+            bound = None
         else:
             lo, hi = _EARLIEST_PLAUSIBLE_YEAR, last_session.year
             while lo < hi:
@@ -365,7 +400,24 @@ class MarketDataPriceSource:
         """Most recent official close: the last completed session's daily
         candle; steps back if the vendor hasn't published it yet."""
         session = self._calendar.last_completed_session(_now())
+        cached = None
+        for pk, days in self._daily.items():
+            mapped_pk = self._mapped.get(pk)
+            if mapped_pk is not None and mapped_pk.symbol == symbol:
+                cached = days
+                break
         for _ in range(3):
+            if cached is not None and session in cached:
+                candle = cached[session]
+                return PriceQuote(
+                    price=candle.close,
+                    currency=currency,
+                    as_of=datetime.datetime.combine(
+                        session, datetime.time(), tzinfo=EASTERN
+                    ).astimezone(datetime.UTC),
+                    source=SOURCE_LABEL,
+                    kind=PriceKind.EOD,
+                )
             try:
                 payload = self._candles_payload(symbol, session, session)
             except (MarketDataBadRequest, MarketDataEntitlementError):
@@ -393,7 +445,7 @@ class MarketDataPriceSource:
     # -- protocol: capabilities ---------------------------------------------------
 
     def capabilities(self, instrument: Instrument) -> PriceCapabilities | None:
-        mapped = map_instrument(instrument, currency_codes=self._currency_codes)
+        mapped = self._map(instrument)
         if mapped is None:
             return None
         ent = self._ensure_entitlements()
@@ -501,7 +553,7 @@ class MarketDataPriceSource:
     def get_quote(
         self, instrument: Instrument, *, kind: PriceKind | None = None
     ) -> PriceQuote | None:
-        mapped = map_instrument(instrument, currency_codes=self._currency_codes)
+        mapped = self._map(instrument)
         currency = instrument.price_currency
         if mapped is None or currency is None:
             return None
@@ -528,7 +580,7 @@ class MarketDataPriceSource:
         result: dict[Instrument, PriceQuote | None] = {}
         batches: dict[PriceKind, list[tuple[Instrument, Instrument, str]]] = {}
         for instrument in instruments:
-            mapped = map_instrument(instrument, currency_codes=self._currency_codes)
+            mapped = self._map(instrument)
             currency = instrument.price_currency
             if mapped is None or currency is None:
                 result[instrument] = None
@@ -586,7 +638,7 @@ class MarketDataPriceSource:
     # -- protocol: history -----------------------------------------------------------
 
     def get_close(self, instrument: Instrument, on: datetime.date) -> PriceQuote | None:
-        mapped = map_instrument(instrument, currency_codes=self._currency_codes)
+        mapped = self._map(instrument)
         currency = instrument.price_currency
         if mapped is None or currency is None:
             return None
@@ -600,6 +652,20 @@ class MarketDataPriceSource:
             bound = self._equity_bound(instrument, mapped.symbol)
             if bound is None or on not in bound or self._calendar.is_session(on) is False:
                 return None
+            cached_days = self._daily.get(instrument.pk)
+            if cached_days is not None:
+                candle = cached_days.get(on)
+                if candle is None:
+                    return None  # a non-session inside the archive
+                return PriceQuote(
+                    price=candle.close,
+                    currency=currency,
+                    as_of=datetime.datetime.combine(on, datetime.time(), tzinfo=EASTERN).astimezone(
+                        datetime.UTC
+                    ),
+                    source=SOURCE_LABEL,
+                    kind=PriceKind.EOD,
+                )
             payload = self._candles_payload(mapped.symbol, on, on)
             if isinstance(payload, NoData) or not payload.get("c"):
                 return None
@@ -625,7 +691,7 @@ class MarketDataPriceSource:
     ) -> OHLCVSeries | None:
         if start > end:
             raise ValueError(f"start {start} is after end {end}")
-        mapped = map_instrument(instrument, currency_codes=self._currency_codes)
+        mapped = self._map(instrument)
         currency = instrument.price_currency
         if mapped is None or currency is None:
             return None
@@ -641,13 +707,21 @@ class MarketDataPriceSource:
         clipped_end = min(end, bound.max)
         daily: list[Candle] = []
         if clipped_start <= clipped_end:
-            payload = self._candles_payload(mapped.symbol, clipped_start, clipped_end)
-            if not isinstance(payload, NoData):
+            cached_days = self._daily.get(instrument.pk)
+            if cached_days is not None:
                 daily = [
                     candle
-                    for candle in self._candles_from_payload(payload)
-                    if clipped_start <= candle.session <= clipped_end
+                    for session, candle in sorted(cached_days.items())
+                    if clipped_start <= session <= clipped_end
                 ]
+            else:
+                payload = self._candles_payload(mapped.symbol, clipped_start, clipped_end)
+                if not isinstance(payload, NoData):
+                    daily = [
+                        candle
+                        for candle in self._candles_from_payload(payload)
+                        if clipped_start <= candle.session <= clipped_end
+                    ]
         return OHLCVSeries(
             instrument=instrument,
             currency=currency,
