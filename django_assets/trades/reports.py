@@ -107,6 +107,7 @@ class OpenStrategy:
     unrealized_pnl: Decimal | None
     pnl_pct: Decimal | None
     pnl_pct_incl_rolls: Decimal | None  # (unrealized + realized rolls) / premium incl. rolls
+    pnl_incl_rolls: Decimal | None  # absolute: unrealized + realized rolls
     delta_pct: Decimal | None
     extrinsic_value: Decimal | None  # Σ signed qty × leg extrinsic × multiplier
     moneyness: str | None  # "ITM" | "OTM"
@@ -549,6 +550,7 @@ def open_option_strategies(user: Any, price_source: PriceSource) -> "list[OpenSt
             else None
         )
         realized_rolls_total = sum((segment.realized_pnl for segment in rolls), Decimal(0))
+        pnl_incl_rolls = unrealized + realized_rolls_total if unrealized is not None else None
         pnl_pct_incl_rolls = (
             (unrealized + realized_rolls_total) / abs(premium_incl_rolls)
             if unrealized is not None and premium_incl_rolls
@@ -635,6 +637,7 @@ def open_option_strategies(user: Any, price_source: PriceSource) -> "list[OpenSt
                 unrealized_pnl=unrealized,
                 pnl_pct=pnl_pct,
                 pnl_pct_incl_rolls=pnl_pct_incl_rolls,
+                pnl_incl_rolls=pnl_incl_rolls,
                 delta_pct=delta_pct,
                 extrinsic_value=extrinsic_total,
                 moneyness=moneyness,
@@ -1388,6 +1391,7 @@ class EquityHolding:
     shares: Decimal
     cost_basis: Decimal | None  # per share, average cost
     market_value: Decimal | None
+    pnl: Decimal | None  # absolute, vs total basis
     pnl_pct: Decimal | None  # vs cost basis
 
 
@@ -1446,14 +1450,39 @@ def equity_holdings(
         quote = quotes.get(inst)
         market_value = inst.quantize_price(qty * quote.price * inst.multiplier) if quote else None
         pnl_pct = (quote.price - per_share) / per_share if quote is not None and per_share else None
+        basis_total = inst.quantize_price(per_share * qty) if per_share is not None else None
         rows.append(
             EquityHolding(
                 instrument=inst,
                 shares=qty,
                 cost_basis=per_share,
                 market_value=market_value,
+                pnl=(
+                    market_value - basis_total
+                    if market_value is not None and basis_total is not None
+                    else None
+                ),
                 pnl_pct=pnl_pct,
             )
         )
     rows.sort(key=lambda row: row.instrument.code)
     return rows
+
+
+def premium_months(
+    user: Any, year: int, *, underlyings: "list[str] | None" = None
+) -> "dict[int, CalendarDay]":
+    """Monthly aggregates of the premium calendar for one year — the
+    calendar's Month view (Jan–Dec grid)."""
+    months: dict[int, CalendarDay] = {}
+    for month in range(1, 13):
+        days = premium_calendar(user, year, month, underlyings=underlyings)
+        if not days:
+            continue
+        months[month] = CalendarDay(
+            net_premium=sum((day.net_premium for day in days.values()), Decimal(0)),
+            events=sum(day.events for day in days.values()),
+            wins=sum(day.wins for day in days.values()),
+            losses=sum(day.losses for day in days.values()),
+        )
+    return months
