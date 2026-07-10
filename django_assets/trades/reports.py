@@ -36,7 +36,13 @@ from typing import Any
 from django.utils import timezone
 
 from django_assets.core.models import Instrument
-from django_assets.core.prices import OptionQuote, PriceQuote, PriceSource
+from django_assets.core.prices import (
+    OptionChainSource,
+    OptionContract,
+    OptionQuote,
+    PriceQuote,
+    PriceSource,
+)
 from django_assets.instruments.options.models import OptionMeta
 from django_assets.trades.models import Trade, TradeAllocation
 
@@ -1469,6 +1475,74 @@ def equity_holdings(
     return rows
 
 
+@dataclass(frozen=True)
+class MonthDetail:
+    """The calendar's month-detail dialog: realized-PnL breakdown for one
+    month with the prior month for comparison, over CLOSED strategies."""
+
+    year: int
+    month: int
+    total_pnl: Decimal
+    previous_pnl: Decimal
+    wins: int
+    losses: int
+    win_ratio: Decimal | None
+    overall_win_ratio: Decimal | None
+    avg_daily_pnl: Decimal | None
+    previous_avg_daily_pnl: Decimal | None
+    trading_days: int
+    daily: "list[tuple[datetime.date, Decimal]]"  # ascending
+    worst_day: "tuple[datetime.date, Decimal] | None"
+    transactions: "list[ClosedStrategy]"
+
+
+def month_detail(user: Any, year: int, month: int) -> MonthDetail:
+    """Aggregate CLOSED strategies for one month (and the prior month for
+    the comparison figures) — every value the month dialog renders."""
+    closed = closed_option_strategies(user)
+
+    def month_of(target_year: int, target_month: int) -> "list[ClosedStrategy]":
+        return [
+            row
+            for row in closed
+            if row.closed_on
+            and (row.closed_on.year, row.closed_on.month) == (target_year, target_month)
+        ]
+
+    prev_year, prev_month = (year, month - 1) if month > 1 else (year - 1, 12)
+    rows = sorted(month_of(year, month), key=lambda r: (r.closed_on, r.trade.pk))
+    prev_rows = month_of(prev_year, prev_month)
+
+    daily_map: dict[datetime.date, Decimal] = defaultdict(Decimal)
+    for row in rows:
+        if row.closed_on:
+            daily_map[row.closed_on] += row.net_profit
+    daily = sorted(daily_map.items())
+    total = sum((row.net_profit for row in rows), Decimal(0))
+    prev_total = sum((row.net_profit for row in prev_rows), Decimal(0))
+    wins = sum(1 for row in rows if row.net_profit > 0)
+    losses = sum(1 for row in rows if row.net_profit <= 0)
+    prev_days = len({row.closed_on for row in prev_rows if row.closed_on})
+    all_wins = sum(1 for row in closed if row.net_profit > 0)
+
+    return MonthDetail(
+        year=year,
+        month=month,
+        total_pnl=total,
+        previous_pnl=prev_total,
+        wins=wins,
+        losses=losses,
+        win_ratio=Decimal(wins) / len(rows) if rows else None,
+        overall_win_ratio=Decimal(all_wins) / len(closed) if closed else None,
+        avg_daily_pnl=total / len(daily) if daily else None,
+        previous_avg_daily_pnl=prev_total / prev_days if prev_days else None,
+        trading_days=len(daily),
+        daily=daily,
+        worst_day=min(daily, key=lambda kv: kv[1]) if daily else None,
+        transactions=rows,
+    )
+
+
 def premium_months(
     user: Any, year: int, *, underlyings: "list[str] | None" = None
 ) -> "dict[int, CalendarDay]":
@@ -1510,3 +1584,93 @@ def premium_months(
         )
         for month, data in months.items()
     }
+
+
+@dataclass(frozen=True)
+class RollCandidate:
+    contract: OptionContract
+    expiry: datetime.date
+    strike: Decimal
+    right: str
+    price: Decimal  # per-contract mark of the candidate (sell-to-open)
+    delta: Decimal | None
+    net_credit: Decimal  # (candidate − current) × contracts × multiplier
+
+
+@dataclass(frozen=True)
+class RollFinder:
+    trade: Trade
+    underlying: Instrument
+    right: str
+    current_strike: Decimal
+    current_expiry: datetime.date
+    current_price: Decimal  # buy-to-close cost, per contract
+    contracts: Decimal
+    candidates: "list[RollCandidate]"
+
+
+def roll_candidates(
+    trade: Trade,
+    leg_instrument: Instrument,
+    price_source: PriceSource,
+    chain_source: OptionChainSource,
+    *,
+    count: int = 5,
+    max_expirations: int = 3,
+) -> "RollFinder | None":
+    """Roll targets for an open short-option leg: later-dated contracts of
+    the same right, ranked nearest-expiry then closest-strike. Needs an
+    OptionChainSource (chain read); returns None when the source can't
+    enumerate the underlying's chain — never a guess (ADR-0041). The
+    current leg's own quote gives the buy-to-close cost; each candidate's
+    net_credit is what rolling into it collects."""
+    meta = OptionMeta.objects.filter(instrument=leg_instrument).select_related("underlying").first()
+    if meta is None:
+        return None
+    position = trade.net_position(leg_instrument)
+    if position == 0:
+        return None
+    current_quote = price_source.get_quote(leg_instrument)
+    current_price = current_quote.price if current_quote is not None else Decimal(0)
+
+    expirations = chain_source.get_expirations(meta.underlying)
+    if expirations is None:
+        return None
+    later = [exp for exp in expirations if exp > meta.expiry][:max_expirations]
+    strike = Decimal(meta.strike)
+    contracts = abs(position)
+
+    candidates: list[RollCandidate] = []
+    for expiry in later:
+        chain = chain_source.get_option_chain(meta.underlying, expiration=expiry, right=meta.right)
+        if not chain:
+            continue
+        for contract in chain:
+            if contract.right != meta.right or contract.quote is None:
+                continue
+            candidates.append(
+                RollCandidate(
+                    contract=contract,
+                    expiry=contract.expiry,
+                    strike=contract.strike,
+                    right=contract.right,
+                    price=contract.quote.price,
+                    delta=contract.quote.delta,
+                    net_credit=leg_instrument.quantize_price(
+                        (contract.quote.price - current_price)
+                        * contracts
+                        * leg_instrument.multiplier
+                    ),
+                )
+            )
+    candidates.sort(key=lambda c: (c.expiry, abs(c.strike - strike)))
+    return RollFinder(
+        trade=trade,
+        underlying=meta.underlying,
+        right=meta.right,
+        current_strike=strike,
+        current_expiry=meta.expiry,
+        current_price=current_price,
+        contracts=contracts,
+        candidates=candidates[:count],
+    )

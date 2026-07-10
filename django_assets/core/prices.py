@@ -220,6 +220,53 @@ def aggregate_candles(daily: Iterable[Candle], resolution: Resolution) -> list[C
     return aggregated
 
 
+@dataclass(frozen=True)
+class OptionContract:
+    """A tradeable option contract discovered from a chain (ADR-0041).
+    `quote` carries the market data (greeks/IV via OptionQuote); the
+    descriptor fields let a consumer reason about it before instantiating
+    an Instrument. `right` is "C" | "P"; strike/expiry identify it."""
+
+    underlying: Instrument
+    expiry: datetime.date
+    strike: Decimal
+    right: str
+    occ_symbol: str
+    quote: "OptionQuote | None"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "strike", to_decimal(self.strike, param="strike"))
+
+
+@runtime_checkable
+class OptionChainSource(Protocol):
+    """Read-time option-chain discovery (ADR-0041) — a SEPARATE protocol
+    from PriceSource: a source may price known contracts without being
+    able to enumerate a chain, and vice versa. Consumers that need roll
+    candidates, chain browsing, or expiration lists take an
+    OptionChainSource; valuation still only needs PriceSource. Same
+    posture as the price contract: read-time, no storage, `None` when the
+    source honestly cannot answer (unmappable underlying, no chain
+    access)."""
+
+    def get_expirations(self, underlying: Instrument) -> "list[datetime.date] | None":
+        """Available expiration dates for the underlying, ascending;
+        None = cannot enumerate for this underlying."""
+        ...
+
+    def get_option_chain(
+        self,
+        underlying: Instrument,
+        *,
+        expiration: datetime.date,
+        right: str | None = None,
+    ) -> "list[OptionContract] | None":
+        """Contracts at one expiration (optionally one right), ascending
+        by strike, each carrying a live OptionQuote. None = no chain
+        access for this underlying/expiration."""
+        ...
+
+
 @runtime_checkable
 class PriceSource(Protocol):
     """Structural v2 contract (ADR-0039 §4): capability discovery, kinded

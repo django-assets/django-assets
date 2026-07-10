@@ -332,3 +332,45 @@ def test_bound_discovery_cached_per_instrument(source, vendor, acme):
     count = len(vendor.calls)
     source.capabilities(acme)
     assert len(vendor.calls) == count  # fully served from instance caches
+
+
+@freeze_time(FROZEN)
+def test_option_chain_surface(vendor, source, acme, usd):
+    from django_assets.core.prices import OptionChainSource, OptionContract
+
+    vendor.expirations["ACME"] = ["2026-07-17", "2026-08-21", "2026-09-18"]
+    vendor.chains[("ACME", "2026-08-21")] = [
+        {
+            "optionSymbol": "ACME260821P00050000",
+            "side": "put",
+            "strike": "50",
+            "mark": "1.40",
+            "delta": "-0.24",
+        },
+        {
+            "optionSymbol": "ACME260821C00055000",
+            "side": "call",
+            "strike": "55",
+            "mark": "0.90",
+            "delta": "0.21",
+        },
+    ]
+    assert isinstance(source, OptionChainSource)
+    assert source.get_expirations(acme) == [
+        datetime.date(2026, 7, 17),
+        datetime.date(2026, 8, 21),
+        datetime.date(2026, 9, 18),
+    ]
+    puts = source.get_option_chain(acme, expiration=datetime.date(2026, 8, 21), right="P")
+    assert len(puts) == 1
+    put = puts[0]
+    assert isinstance(put, OptionContract)
+    assert put.right == "P"
+    assert put.strike == D("50")
+    assert put.quote.price == D("1.40")
+    assert put.quote.delta == D("-0.24")
+    both = source.get_option_chain(acme, expiration=datetime.date(2026, 8, 21))
+    assert {c.right for c in both} == {"P", "C"}
+    # unmappable underlying / no chain → None
+    assert source.get_expirations(usd) is None
+    assert source.get_option_chain(acme, expiration=datetime.date(2027, 1, 1)) is None

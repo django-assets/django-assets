@@ -807,3 +807,176 @@ def test_premium_months_yearly_aggregate(user, closed):
     assert months[6].net_premium == D("-175.11")  # June: buyback − fee
     assert months[6].wins == 1
     assert 7 not in months
+
+
+def test_month_detail_aggregate(user, usd, accounts, spy):
+    # Two closes in June, one in May, for one underlying.
+    def closed(strike, premium, debit, open_d, close_d):
+        opt = make_option(usd, spy, strike=strike, right="P", expiry=close_d)
+        t = Trade.objects.create(user=user, name=f"h{strike}")
+        t.assign(
+            book(
+                accounts,
+                usd,
+                ts=datetime.datetime.combine(open_d, datetime.time(14, 0), tzinfo=UTC),
+                position_legs=[(opt, -5)],
+                cash=premium,
+                fee="6.50",
+            ),
+            fraction=1,
+        )
+        t.assign(
+            book(
+                accounts,
+                usd,
+                ts=datetime.datetime.combine(close_d, datetime.time(20, 0), tzinfo=UTC),
+                position_legs=[(opt, 5)],
+                cash=str(-D(debit)),
+                fee="6.50",
+            ),
+            fraction=1,
+        )
+        return t
+
+    closed("30", "500.00", "100.00", datetime.date(2026, 5, 20), datetime.date(2026, 5, 28))
+    closed("31", "600.00", "50.00", datetime.date(2026, 6, 3), datetime.date(2026, 6, 10))
+    closed("32", "400.00", "600.00", datetime.date(2026, 6, 3), datetime.date(2026, 6, 18))
+
+    from django_assets.trades.reports import month_detail
+
+    d = month_detail(user, 2026, 6)
+    # June net: (600-50-13) + (400-600-13) = 537 + (-213) = 324
+    assert d.total_pnl == D("324.00")
+    assert d.previous_pnl == D("387.00")  # May: 500-100-13
+    assert d.wins == 1 and d.losses == 1
+    assert d.win_ratio == D("0.5")
+    assert d.trading_days == 2  # June 10 and June 18
+    assert d.avg_daily_pnl == D("324.00") / 2
+    assert d.previous_avg_daily_pnl == D("387.00") / 1
+    daily = dict(d.daily)
+    assert daily[datetime.date(2026, 6, 10)] == D("537.00")
+    assert daily[datetime.date(2026, 6, 18)] == D("-213.00")
+    assert d.worst_day == (datetime.date(2026, 6, 18), D("-213.00"))
+    assert len(d.transactions) == 2
+    assert d.overall_win_ratio == D(2) / 3  # 2 wins of 3 all-time closes
+
+
+class FakeChain:
+    """An OptionChainSource stub: a few later-dated puts and calls."""
+
+    def __init__(self, usd, underlying, contracts):
+        self.usd = usd
+        self.underlying = underlying
+        # contracts: list of (expiry, strike, right, mark, delta)
+        self._by_exp = {}
+        for expiry, strike, right, mark, delta in contracts:
+            self._by_exp.setdefault(expiry, []).append((strike, right, mark, delta))
+
+    def get_expirations(self, underlying):
+        if underlying != self.underlying:
+            return None
+        return sorted(self._by_exp)
+
+    def get_option_chain(self, underlying, *, expiration, right=None):
+        from django_assets.core.prices import OptionContract, OptionQuote, PriceKind
+
+        rows = self._by_exp.get(expiration)
+        if underlying != self.underlying or rows is None:
+            return None
+        out = []
+        for strike, r, mark, delta in sorted(rows):
+            if right and r != right:
+                continue
+            out.append(
+                OptionContract(
+                    underlying=underlying,
+                    expiry=expiration,
+                    strike=D(strike),
+                    right=r,
+                    occ_symbol=f"{underlying.code}{expiration:%y%m%d}{r}{int(D(strike) * 1000):08d}",
+                    quote=OptionQuote(
+                        price=D(mark),
+                        currency=self.usd,
+                        as_of=None,
+                        source="fake",
+                        kind=PriceKind.DELAYED,
+                        delta=D(delta),
+                    ),
+                )
+            )
+        return out
+
+
+def test_roll_candidates_for_short_put(user, usd, accounts, spy):
+    from django_assets.trades.reports import roll_candidates
+
+    short_put = make_option(usd, spy, strike="50", right="P", expiry=datetime.date(2026, 7, 17))
+    trade = Trade.objects.create(user=user, name="rollable")
+    trade.assign(
+        book(accounts, usd, ts=OPEN_TS, position_legs=[(short_put, -5)], cash="250.00"),
+        fraction=1,
+    )
+    marks = Marks(
+        {
+            short_put: OptionQuote(
+                price=D("1.00"),
+                currency=usd,
+                as_of=None,
+                source="t",
+                kind=PriceKind.DELAYED,
+                delta=D("-0.30"),
+            )
+        }
+    )
+    chain = FakeChain(
+        usd,
+        spy,
+        [
+            # earlier/same expiry — excluded (a roll goes further out)
+            (datetime.date(2026, 7, 17), "48", "P", "0.80", "-0.25"),
+            # later expiries — candidates
+            (datetime.date(2026, 8, 21), "50", "P", "2.10", "-0.31"),
+            (datetime.date(2026, 8, 21), "48", "P", "1.40", "-0.24"),
+            (datetime.date(2026, 9, 18), "50", "P", "2.80", "-0.33"),
+            # a call — excluded (wrong right for a short-put roll)
+            (datetime.date(2026, 8, 21), "55", "C", "0.50", "0.20"),
+        ],
+    )
+    result = roll_candidates(trade, short_put, marks, chain, count=3)
+    assert result is not None
+    assert result.underlying == spy
+    assert result.right == "P"
+    assert result.current_strike == D("50")
+    assert result.current_price == D("1.00")  # buy-to-close cost per contract
+    assert result.contracts == D("5")
+    # candidates: later expiries only, right P, ranked (nearest expiry, closest strike first)
+    cands = result.candidates
+    assert all(c.expiry > datetime.date(2026, 7, 17) for c in cands)
+    assert all(c.right == "P" for c in cands)
+    assert len(cands) == 3
+    first = cands[0]
+    assert first.expiry == datetime.date(2026, 8, 21)
+    assert first.strike == D("50")
+    assert first.price == D("2.10")
+    # net credit to roll (sell new − buy back current) × contracts × 100
+    assert first.net_credit == (D("2.10") - D("1.00")) * 5 * 100
+
+
+def test_roll_candidates_none_without_chain_access(user, usd, accounts, spy):
+    from django_assets.trades.reports import roll_candidates
+
+    short_put = make_option(usd, spy, strike="50", right="P", expiry=datetime.date(2026, 7, 17))
+    trade = Trade.objects.create(user=user, name="norc")
+    trade.assign(
+        book(accounts, usd, ts=OPEN_TS, position_legs=[(short_put, -5)], cash="250.00"),
+        fraction=1,
+    )
+
+    class NoChain:
+        def get_expirations(self, underlying):
+            return None
+
+        def get_option_chain(self, underlying, *, expiration, right=None):
+            return None
+
+    assert roll_candidates(trade, short_put, Marks({}), NoChain()) is None

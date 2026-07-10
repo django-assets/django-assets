@@ -44,6 +44,7 @@ from django_assets.core.prices import (
     Candle,
     DateRange,
     OHLCVSeries,
+    OptionContract,
     OptionQuote,
     PriceCapabilities,
     PriceKind,
@@ -69,6 +70,15 @@ _REALTIME_MAX_AGE = datetime.timedelta(seconds=90)
 _DELAYED_GRACE = datetime.timedelta(minutes=30)
 _EARLIEST_PLAUSIBLE_YEAR = 1930
 _OPTION_SERIES_FLOOR = "1990-01-01"
+
+
+def _active_ticker(instrument: Instrument) -> str | None:
+    values = list(
+        instrument.identifiers.filter(type="ticker", is_active=True)
+        .order_by("id")
+        .values_list("value", flat=True)[:1]
+    )
+    return values[0] if values else None
 
 
 def _now() -> datetime.datetime:
@@ -680,6 +690,62 @@ class MarketDataPriceSource:
             )
         except (MarketDataBadRequest, MarketDataEntitlementError):
             return None
+
+    # -- protocol: option chain (ADR-0041) ---------------------------------------------
+
+    def get_expirations(self, underlying: Instrument) -> "list[datetime.date] | None":
+        ticker = _active_ticker(underlying)
+        if ticker is None or underlying.price_currency is None:
+            return None
+        try:
+            payload = self._client.get(f"/v1/options/expirations/{ticker}/")
+        except (MarketDataBadRequest, MarketDataEntitlementError):
+            return None
+        if isinstance(payload, NoData):
+            return None
+        return [datetime.date.fromisoformat(value) for value in payload.get("expirations", [])]
+
+    def get_option_chain(
+        self,
+        underlying: Instrument,
+        *,
+        expiration: datetime.date,
+        right: str | None = None,
+    ) -> "list[OptionContract] | None":
+        ticker = _active_ticker(underlying)
+        currency = underlying.price_currency
+        if ticker is None or currency is None:
+            return None
+        params = {"expiration": expiration.isoformat()}
+        if right is not None:
+            params["side"] = "call" if right == "C" else "put"
+        try:
+            payload = self._client.get(f"/v1/options/chain/{ticker}/", params)
+        except (MarketDataBadRequest, MarketDataEntitlementError):
+            return None
+        if isinstance(payload, NoData):
+            return None
+        symbols = payload.get("optionSymbol", [])
+        contracts: list[OptionContract] = []
+        for index in range(len(symbols)):
+            row = self._row_at(payload, index)
+            side = row.get("side")
+            contract_right = "C" if side == "call" else "P"
+            strike = row.get("strike")
+            if strike is None:
+                continue
+            contracts.append(
+                OptionContract(
+                    underlying=underlying,
+                    expiry=_session_of(row["expiration"]),
+                    strike=Decimal(strike),
+                    right=contract_right,
+                    occ_symbol=row["optionSymbol"],
+                    quote=self._option_quote_from_row(row, currency, PriceKind.DELAYED),
+                )
+            )
+        contracts.sort(key=lambda contract: contract.strike)
+        return contracts
 
     def get_ohlcv(
         self,
