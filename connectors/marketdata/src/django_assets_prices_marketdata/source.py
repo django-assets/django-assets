@@ -280,6 +280,9 @@ class MarketDataPriceSource:
                 payload = NoData()
         rows: dict[datetime.date, dict[str, Any]] = {}
         if not isinstance(payload, NoData):
+            # An in-progress session is not an official close yet: clip
+            # to sessions the calendar says are complete.
+            last_complete = self._calendar.last_completed_session(_now())
             count = len(payload.get("updated", []))
             for index in range(count):
                 row = {
@@ -288,7 +291,7 @@ class MarketDataPriceSource:
                     if isinstance(values, list) and len(values) == count
                 }
                 updated = row.get("updated")
-                if updated is not None:
+                if updated is not None and _session_of(updated) <= last_complete:
                     rows[_session_of(updated)] = row
         self._option_series[instrument.pk] = rows
         return rows

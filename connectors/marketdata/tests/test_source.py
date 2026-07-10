@@ -185,6 +185,28 @@ def test_never_listed_option_is_unpriceable_not_an_error(source, acme, usd):
     assert source.get_quotes([ghost])[ghost] is None
 
 
+@freeze_time(FROZEN)
+def test_in_progress_session_never_serves_as_option_close(source, vendor, acme_call):
+    """If the vendor materializes TODAY's EOD-quote row intraday, it is
+    not an official close yet: closes.max stays at the last completed
+    session and get_close(today) answers None until the bell."""
+    import copy
+
+    today_row = copy.deepcopy(vendor.option_series[OPTION_SYMBOL][-1])
+    today_row["session"] = datetime.date(2026, 7, 10)  # frozen "today", 15:00 ET
+    today_row["updated"] = int(
+        datetime.datetime(2026, 7, 10, 18, 55, tzinfo=datetime.UTC).timestamp()
+    )
+    vendor.option_series[OPTION_SYMBOL].append(today_row)
+
+    caps = source.capabilities(acme_call)
+    assert caps.closes.max == LAST_SESSION
+    assert source.get_close(acme_call, on=datetime.date(2026, 7, 10)) is None
+    eod = source.get_quote(acme_call, kind=PriceKind.EOD)
+    assert eod.as_of.astimezone(datetime.UTC).date() <= datetime.date(2026, 7, 10)
+    assert eod.price == D("15.30")  # still Thursday's row
+
+
 # -- batch -----------------------------------------------------------------------
 
 
