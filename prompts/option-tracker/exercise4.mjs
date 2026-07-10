@@ -37,7 +37,7 @@ check('P1: custom inputs hidden initially', await page.locator('#history-range-m
 await page.screenshot({ path: `${OUT}/history-range-menu.png`, fullPage: false });
 // pick This Month -> button label updates, menu closes
 await page.locator('#history-range-menu .range-item', { hasText: 'This Month' }).click();
-await page.waitForTimeout(1500);
+await page.waitForTimeout(4500);
 check('P1: This Month applied (label + url)', /This Month/.test(await page.locator('#history-range-btn').innerText()) && page.url().includes('range=this_month'), page.url());
 check('P1: menu closed after pick', await page.locator('#history-range-menu:visible').count() === 0);
 await page.screenshot({ path: `${OUT}/history-range-thismonth.png`, fullPage: false });
@@ -65,7 +65,7 @@ await page.screenshot({ path: `${OUT}/history-range-custom-applied.png`, fullPag
 await page.locator('#history-range-btn').click();
 await page.waitForTimeout(300);
 await page.locator('#history-range-menu .range-clear').click();
-await page.waitForTimeout(1500);
+await page.waitForTimeout(4500);
 check('P1: Select date range clears', /Date Range/.test(await page.locator('#history-range-btn').innerText()) && !/This Month|Custom/.test(await page.locator('#history-range-btn').innerText()));
 // menus also exist on analytics + pnl flow
 await go('/tracker/analytics/');

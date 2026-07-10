@@ -53,8 +53,16 @@ POSITION_SORTS = {
     "moneyness": "moneyness_pct",
 }
 
-#: Roll Selection finder lookback windows (reference select: 30/60/90 days).
-ROLL_LOOKBACKS = (30, 60, 90)
+#: Roll Selection finder lookback windows (reference select: 60 days ..
+#: 2 years; default 60).
+ROLL_LOOKBACKS = (
+    (60, "60 days"),
+    (90, "90 days"),
+    (180, "180 days"),
+    (365, "1 year"),
+    (730, "2 years"),
+)
+ROLL_LOOKBACK_DAYS = {days for days, _label in ROLL_LOOKBACKS}
 
 
 def _parse_date(raw: str | None) -> datetime.date | None:
@@ -244,7 +252,7 @@ def roll_finder(request: HttpRequest, trade_pk: int) -> HttpResponse:
         lookback = int(request.GET.get("lookback", "60"))
     except ValueError:
         lookback = 60
-    if lookback not in ROLL_LOOKBACKS:
+    if lookback not in ROLL_LOOKBACK_DAYS:
         lookback = 60
     link = reports.roll_link_candidates(
         user, trade, services.price_source(), lookback_days=lookback
@@ -419,10 +427,14 @@ def calendar_view(request: HttpRequest) -> HttpResponse:
 
     query = request.GET.get("q", "").strip()
     # Reference vocabulary: the "Day" view IS the day-grid calendar
-    # (default); "Month" is the Jan–Dec aggregate-card grid.
-    view_mode = "month" if request.GET.get("view") == "month" else "day"
+    # (default, premium paychecks); "Week" lists the year's ISO weeks and
+    # "Month" is the Jan–Dec aggregate-card grid (both realized PnL).
+    view_mode = request.GET.get("view", "day")
+    if view_mode not in ("day", "week", "month"):
+        view_mode = "day"
 
     weeks = []
+    week_cards = []
     month_cards = []
     if view_mode == "day":
         days = reports.premium_calendar(user, year, month, underlyings=[query] if query else None)
@@ -439,8 +451,11 @@ def calendar_view(request: HttpRequest) -> HttpResponse:
             ]
             for week in grid.monthdatescalendar(year, month)
         ]
+    elif view_mode == "week":
+        periods = reports.realized_weeks(user, year, underlyings=[query] if query else None)
+        week_cards = [{"date": monday, "data": periods[monday]} for monday in sorted(periods)]
     else:
-        months = reports.premium_months(user, year, underlyings=[query] if query else None)
+        months = reports.realized_months(user, year, underlyings=[query] if query else None)
         month_cards = [
             {
                 "date": datetime.date(year, number, 1),
@@ -458,7 +473,7 @@ def calendar_view(request: HttpRequest) -> HttpResponse:
             ("prev", prev_month.year, prev_month.month),
             ("next", next_month.year, next_month.month),
         )
-    else:  # Month view: the arrows step whole years
+    else:  # Week/Month views: the arrows step whole years
         targets = (("prev", year - 1, month), ("next", year + 1, month))
     for name, target_year, target_month in targets:
         params = request.GET.copy()
@@ -473,6 +488,7 @@ def calendar_view(request: HttpRequest) -> HttpResponse:
     context.update(
         {
             "weeks": weeks,
+            "week_cards": week_cards,
             "month_cards": month_cards,
             "view_mode": view_mode,
             "query": query,
@@ -498,10 +514,19 @@ def calendar_month_detail(request: HttpRequest, year: int, month: int) -> HttpRe
     except ValueError as error:
         raise Http404("no such month") from error
     detail = reports.month_detail(services.demo_user(), year, month)
+    # Adjacent months for the dialog's ‹ › chevrons (date arithmetic only;
+    # the chevrons re-load this same endpoint for the neighboring month).
+    prev_month = detail_date - datetime.timedelta(days=1)
+    next_month = (detail_date + datetime.timedelta(days=32)).replace(day=1)
     return render(
         request,
         "optiontracker/_month_detail.html",
-        {"detail": detail, "detail_date": detail_date},
+        {
+            "detail": detail,
+            "detail_date": detail_date,
+            "prev_month": prev_month,
+            "next_month": next_month,
+        },
     )
 
 

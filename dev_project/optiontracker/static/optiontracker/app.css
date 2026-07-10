@@ -954,7 +954,36 @@ dialog.app-dialog.tour-open {
 
 /* Calendar month-detail dialog: every figure server-rendered from
    reports.month_detail(); the bar chart is SVG pixel geometry. */
-.month-detail-dialog { width: 640px; max-width: 94vw; max-height: 86vh; overflow-y: auto; }
+.month-detail-dialog {
+  width: 680px;
+  max-width: 94vw;
+  max-height: 86vh;
+  overflow-y: auto;
+  padding-left: 52px;
+  padding-right: 52px;
+}
+.month-detail-body { position: relative; }
+/* ‹ › chevrons flanking the card content (they sit in the dialog's wide
+   side padding, like the reference): swap the body to the adjacent month. */
+.month-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--card);
+  cursor: pointer;
+}
+.month-nav:hover { background: var(--card-2); }
+.month-nav-prev { left: -42px; }
+.month-nav-next { right: -42px; }
+.month-day-extremes { display: flex; justify-content: space-between; gap: 10px; }
 .month-grid .month-card[data-month-url] { cursor: pointer; }
 .month-grid .month-card[data-month-url]:hover { background: rgba(127, 127, 127, 0.07); }
 .month-stats {
@@ -1514,6 +1543,10 @@ dialog.app-dialog.tour-open {
 .month-card-premium { font-weight: 700; font-size: 14px; }
 .month-card-trades { margin-top: 4px; }
 .month-card-closed { margin-top: 2px; }
+
+/* Week view: the year's ISO weeks with activity, same cell anatomy. */
+.week-card { min-height: 96px; }
+.week-grid-empty { grid-column: 1 / -1; padding: 14px; margin: 0; }
 
 /* ---- responsive ---- */
 

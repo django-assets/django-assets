@@ -8,6 +8,7 @@
               hx-target="#calendar-body" hx-swap="outerHTML"
               hx-include="#calendar-filters,#calendar-view-form" hx-push-url="true">
         <option value="day" {% if view_mode == 'day' %}selected{% endif %}>Day</option>
+        <option value="week" {% if view_mode == 'week' %}selected{% endif %}>Week</option>
         <option value="month" {% if view_mode == 'month' %}selected{% endif %}>Month</option>
       </select>
     </label>
@@ -69,6 +70,21 @@
       {% endfor %}
     {% endfor %}
   </div>
+  {% elif view_mode == 'week' %}
+  <div class="month-grid week-grid">
+    {% for cell in week_cards %}
+    <div class="month-card week-card">
+      <div class="month-card-name">Week of {{ cell.date|date:"M j" }}</div>
+      <div class="month-card-premium {{ cell.data.pnl|sign_class }}">{{ cell.data.pnl|money }}</div>
+      <div class="month-card-trades muted">{{ cell.data.trades }} trade{{ cell.data.trades|pluralize }}</div>
+      {% if cell.data.wins or cell.data.losses %}
+      <div class="month-card-closed muted">Closed: <span class="pos">{{ cell.data.wins }}W</span> <span class="neg">{{ cell.data.losses }}L</span></div>
+      {% endif %}
+    </div>
+    {% empty %}
+    <p class="muted week-grid-empty">No closed trades in {{ month_date.year }}.</p>
+    {% endfor %}
+  </div>
   {% else %}
   <div class="month-grid">
     {% for cell in month_cards %}
@@ -77,8 +93,8 @@
          aria-label="View {{ cell.date|date:'F Y' }} details">
       <div class="month-card-name">{{ cell.date|date:"M" }}</div>
       {% if cell.data %}
-      <div class="month-card-premium {{ cell.data.net_premium|sign_class }}">{{ cell.data.net_premium|money }}</div>
-      <div class="month-card-trades muted">{{ cell.data.events }} trade{{ cell.data.events|pluralize }}</div>
+      <div class="month-card-premium {{ cell.data.pnl|sign_class }}">{{ cell.data.pnl|money }}</div>
+      <div class="month-card-trades muted">{{ cell.data.trades }} trade{{ cell.data.trades|pluralize }}</div>
       {% if cell.data.wins or cell.data.losses %}
       <div class="month-card-closed muted">Closed: <span class="pos">{{ cell.data.wins }}W</span> <span class="neg">{{ cell.data.losses }}L</span></div>
       {% endif %}

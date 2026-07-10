@@ -5,6 +5,15 @@
     <h3>{{ detail_date|date:"F Y" }}</h3>
     <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
   </div>
+  {# Prev/next chevrons flanking the card: reload this dialog with the adjacent month's fragment. #}
+  <button type="button" class="icon-btn month-nav month-nav-prev" aria-label="Previous month"
+          data-month-url="{% url 'optiontracker:calendar-month-detail' prev_month.year prev_month.month %}">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+  </button>
+  <button type="button" class="icon-btn month-nav month-nav-next" aria-label="Next month"
+          data-month-url="{% url 'optiontracker:calendar-month-detail' next_month.year next_month.month %}">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+  </button>
   <div class="month-stats">
     <div class="month-stat-card">
       <span class="month-stat-icon" aria-hidden="true">
@@ -26,8 +35,11 @@
       <div class="month-stat-label">Trading Days</div>
       <div class="month-stat-value">{{ detail.trading_days }}</div>
       {% month_daily_chart detail.daily %}
-      {% if detail.worst_day %}
-      <div class="month-stat-sub">Worst Day: <span class="neg">{{ detail.worst_day.1|money }}</span></div>
+      {% if detail.best_day or detail.worst_day %}
+      <div class="month-stat-sub month-day-extremes">
+        {% if detail.best_day %}<span>Best Day: <span class="{{ detail.best_day.1|sign_class }}">{{ detail.best_day.1|money }}</span></span>{% endif %}
+        {% if detail.worst_day %}<span>Worst Day: <span class="{{ detail.worst_day.1|sign_class }}">{{ detail.worst_day.1|money }}</span></span>{% endif %}
+      </div>
       {% endif %}
     </div>
   </div>
@@ -45,17 +57,15 @@
       </thead>
       <tbody>
         {% for row in detail.transactions %}
-        {% for leg in row.legs %}
         <tr>
           <td>{{ row.closed_on|date:"M j, Y" }}</td>
           <td>{{ row.underlying.code }}</td>
-          <td>{{ leg.right|right_label }}</td>
-          <td>{{ leg.side|action_label }}</td>
-          <td>{{ leg.strike|strike_plain }}</td>
+          <td>{{ row.strategy|strategy_label }}</td>
+          <td>Close</td>
+          <td>{% for leg in row.legs %}{{ leg.strike|strike_plain }}{% if not forloop.last %}/{% endif %}{% endfor %}</td>
           <td>{{ row.expiration|date:"M j, Y" }}</td>
-          <td class="num {{ leg.open_price|sign_class }}">{{ leg.open_price|money }}</td>
+          <td class="num {{ row.net_profit|sign_class }}">{{ row.net_profit|money }}</td>
         </tr>
-        {% endfor %}
         {% endfor %}
       </tbody>
     </table>

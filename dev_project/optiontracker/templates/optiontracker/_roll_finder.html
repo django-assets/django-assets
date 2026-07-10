@@ -13,8 +13,8 @@
       <select name="lookback"
               hx-get="{% url 'optiontracker:roll-finder' link.trade.pk %}"
               hx-target="closest .roll-finder-body" hx-swap="outerHTML">
-        {% for days in lookbacks %}
-        <option value="{{ days }}"{% if link.lookback_days == days %} selected{% endif %}>{{ days }} days</option>
+        {% for days, label in lookbacks %}
+        <option value="{{ days }}"{% if link.lookback_days == days %} selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
     </label>
