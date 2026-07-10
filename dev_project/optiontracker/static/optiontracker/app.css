@@ -792,37 +792,119 @@ th:last-child .tooltip, td:last-child .tooltip { left: auto; right: -6px; transf
 }
 
 /* Start Tutorial: multi-step spotlight tour. The spotlight box's oversized
-   box-shadow dims the page around the highlighted element. */
+   box-shadow dims the page around the highlighted element; its ::after
+   carries the pulsing colored ring — ORANGE on click-through steps,
+   BLUE on Next-driven steps (mirroring the reference tour). */
 
 .tour-overlay { position: fixed; inset: 0; z-index: 1200; }
 .tour-spotlight {
   position: fixed;
   z-index: 1201;
-  border: 2px solid rgb(249, 115, 22);
-  border-radius: 12px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.7);
+}
+.tour-spotlight::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
   box-shadow:
-    0 0 0 4px rgba(249, 115, 22, 0.35),
-    0 0 0 100vmax rgba(0, 0, 0, 0.65);
+    0 0 0 5px rgb(59, 130, 246),
+    0 0 0 10px rgba(59, 130, 246, 0.5),
+    0 0 30px rgba(59, 130, 246, 0.7);
+  animation: tour-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 .tour-spotlight.clickable { cursor: pointer; }
+.tour-spotlight.clickable::after {
+  box-shadow:
+    0 0 0 5px rgb(249, 115, 22),
+    0 0 0 10px rgba(249, 115, 22, 0.5),
+    0 0 30px rgba(249, 115, 22, 0.7);
+}
+@keyframes tour-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
 .tour-popover {
   position: fixed;
   z-index: 1202;
-  width: 330px;
+  width: 320px;
   max-width: calc(100vw - 16px);
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px 18px;
+  border-radius: 10px;
+  padding: 16px;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
 }
-.tour-popover h4 { margin: 0 0 8px; font-size: 15px; padding-right: 24px; }
-.tour-popover p { margin: 0; color: var(--muted); font-size: 13px; }
-.tour-popover .tour-hint { margin-top: 12px; text-align: center; font-size: 12px; }
-.tour-close { position: absolute; top: 8px; right: 8px; }
-.tour-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 14px; }
-.tour-nav .btn { font-size: 12.5px; padding: 6px 12px; }
-.tour-nav .tour-next { margin-left: auto; }
+.tour-popover h4 { margin: 0 0 6px; font-size: 14px; padding-right: 24px; }
+.tour-popover p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.tour-close { position: absolute; top: 10px; right: 10px; }
+.tour-progress { display: flex; gap: 6px; margin-top: 12px; }
+.tour-progress .seg {
+  height: 6px;
+  flex: 1;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 0.3s;
+}
+.tour-progress .seg.fill { background: var(--accent); }
+.tour-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.tour-foot-btns { display: flex; gap: 8px; }
+.tour-hint { flex: 1; margin: 0; text-align: center; font-size: 12px; font-style: italic; color: var(--muted); }
+.tour-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.tour-btn:hover { filter: brightness(1.12); }
+.tour-prev { padding-left: 6px; }
+.tour-next { padding-right: 6px; }
+
+/* Roll dialog opened by the tour: non-modal (dialog.show()) so the tour
+   chrome stays on top, but pinned to center like the modal version. */
+dialog.app-dialog.tour-open {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  z-index: 1150;
+}
+
+/* Calendar period-summary panel shown during the tour (all values are
+   copied verbatim from the selected calendar cell's rendered markup). */
+.tour-cal-summary {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1150;
+  min-width: 340px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+}
+.tour-cal-summary h3 { margin: 0 0 12px; font-size: 15px; }
+.tour-cal-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border-soft);
+  font-size: 13px;
+}
 
 /* TradingView split: the embedded chart panel opens beside the positions
    card (client-side toggle only; the card reflows narrower). */
@@ -874,11 +956,28 @@ th:last-child .tooltip, td:last-child .tooltip { left: auto; right: -6px; transf
   overflow-y: auto;
 }
 .tv-watchlist-title { color: #e7eaf0; font-weight: 700; font-size: 14px; margin: 2px 4px 10px; }
+.tv-watch-head,
 .tv-watch-item {
-  display: block;
+  display: grid;
+  grid-template-columns: 1fr 36px 40px;
+  gap: 6px;
+  align-items: center;
   width: 100%;
   text-align: left;
   padding: 7px 10px;
+}
+.tv-watch-head {
+  padding-bottom: 5px;
+  border-bottom: 1px solid #262b33;
+  margin-bottom: 4px;
+  color: #8b93a1;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.tv-watch-head span:not(:first-child) { text-align: right; }
+.tv-watch-item {
   margin-bottom: 2px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -888,6 +987,7 @@ th:last-child .tooltip, td:last-child .tooltip { left: auto; right: -6px; transf
   font-size: 13px;
   cursor: pointer;
 }
+.tv-watch-quote { color: #8b93a1; font-size: 12px; text-align: right; }
 .tv-watch-item:hover { background: rgba(255, 255, 255, 0.06); }
 .tv-watch-item.active { border-color: #3b82f6; color: #e7eaf0; }
 

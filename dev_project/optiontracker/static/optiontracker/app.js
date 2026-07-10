@@ -62,7 +62,7 @@
     }
     var tvItem = event.target.closest(".tv-watch-item");
     if (tvItem) {
-      selectTvSymbol(tvItem.textContent.trim());
+      selectTvSymbol(tvItem.getAttribute("data-symbol") || tvItem.textContent.trim());
       return;
     }
 
@@ -301,11 +301,20 @@
     var list = document.querySelector("#tv-watchlist .tv-watchlist-items");
     if (!list) return;
     list.innerHTML = "";
+    // Table-ish chrome: Symbol / Last / Chg% columns. Prices are not
+    // fetched client-side, so the quote cells stay as placeholder dashes.
+    var head = document.createElement("div");
+    head.className = "tv-watch-head";
+    head.innerHTML = "<span>Symbol</span><span>Last</span><span>Chg%</span>";
+    list.appendChild(head);
     symbols.forEach(function (code) {
       var item = document.createElement("button");
       item.type = "button";
       item.className = "tv-watch-item" + (code === tvActiveSymbol ? " active" : "");
-      item.textContent = code;
+      item.setAttribute("data-symbol", code);
+      item.innerHTML =
+        '<span class="tv-watch-sym">' + esc(code) + "</span>" +
+        '<span class="tv-watch-quote">–</span><span class="tv-watch-quote">–</span>';
       list.appendChild(item);
     });
   }
@@ -349,7 +358,7 @@
     if (!symbol || symbol === tvActiveSymbol) return;
     tvActiveSymbol = symbol;
     document.querySelectorAll(".tv-watch-item").forEach(function (item) {
-      item.classList.toggle("active", item.textContent.trim() === symbol);
+      item.classList.toggle("active", item.getAttribute("data-symbol") === symbol);
     });
     embedTvChart(symbol);
   }
@@ -384,20 +393,130 @@
   });
 
   // ---- Start Tutorial: multi-step spotlight tour ----
-  // Dims the page (the spotlight box's giant box-shadow does the dimming
-  // so the target stays bright) and walks a fixed set of steps with
-  // Next/Previous. Steps live on two pages; the current step index is
-  // kept in sessionStorage so the tour survives the step-1 -> step-2
-  // navigation (and back). ✕ or a click outside dismisses anywhere.
+  // Mirrors the reference app's guided tour: 23 steps across every page of
+  // the app, organized in titled groups with a segmented progress bar.
+  // Click-through steps show a pulsing ORANGE ring and advance when the
+  // highlighted element is clicked (the click also performs the element's
+  // real action: navigation, opening the TradingView panel, expanding a
+  // row, opening the roll dialog...). Next-driven steps show a BLUE ring
+  // with Previous/Next buttons. The current step index is kept in
+  // sessionStorage so the tour survives cross-page navigations; ✕ or a
+  // click on the dim overlay dismisses anywhere and does not resume.
 
   var TOUR_KEY = "optiontracker-tour-step";
+
+  // --- step-state helpers (idempotent; used by ensure() when a step is
+  // shown, so Previous / reload rebuild the exact UI state a step needs).
+
+  function tourFirstRow() {
+    return document.querySelector("#positions-table tr.expandable");
+  }
+
+  function tourDetailRow() {
+    var row = tourFirstRow();
+    var detail = row && row.nextElementSibling;
+    return detail && detail.classList.contains("detail-row") ? detail : null;
+  }
+
+  function tourRollDialog() {
+    var detail = tourDetailRow();
+    return detail ? detail.querySelector('dialog[id^="roll-dialog"]') : null;
+  }
+
+  function setTourRowExpanded(expanded) {
+    var row = tourFirstRow();
+    var detail = tourDetailRow();
+    if (!row || !detail) return;
+    detail.hidden = !expanded;
+    row.classList.toggle("open", expanded);
+  }
+
+  function setTourRollDialogOpen(open) {
+    var dialog = tourRollDialog();
+    if (!dialog) return;
+    if (open) {
+      // Non-modal on purpose: showModal() would paint the dialog in the
+      // browser top layer, above the tour spotlight and popover.
+      if (!dialog.open) dialog.show();
+      dialog.classList.add("tour-open");
+    } else {
+      dialog.classList.remove("tour-open");
+      if (dialog.open) dialog.close();
+    }
+  }
+
+  function setTourTvOpen(open) {
+    var panel = document.getElementById("tv-panel");
+    if (!panel) return;
+    if (open && panel.hidden) openTvPanel();
+    if (!open && !panel.hidden) closeTvPanel();
+  }
+
+  function positionsState(tv, row, dialog) {
+    return function () {
+      setTourRollDialogOpen(dialog);
+      setTourRowExpanded(row);
+      setTourTvOpen(tv);
+    };
+  }
+
+  function tourCalCell() {
+    var cells = document.querySelectorAll("#calendar-body .calendar-cell, #calendar-body .month-card");
+    for (var i = 0; i < cells.length; i++) {
+      if (cells[i].querySelector(".calendar-premium, .month-card-premium")) return cells[i];
+    }
+    return cells[0] || null;
+  }
+
+  function tourCalCellText(cell, selector) {
+    var node = cell.querySelector(selector);
+    return node ? node.textContent.replace(/\s+/g, " ").trim() : "";
+  }
+
+  // Period-summary panel for the Calendar steps. Presentation only: every
+  // figure is copied verbatim from the selected cell's server-rendered
+  // markup (and the period label from the calendar view controls).
+  function setTourCalSummaryOpen(open) {
+    var existing = document.querySelector(".tour-cal-summary");
+    if (!open) {
+      if (existing) existing.remove();
+      return;
+    }
+    if (existing) return;
+    var cell = tourCalCell();
+    if (!cell) return;
+    var day = tourCalCellText(cell, ".calendar-daynum");
+    var monthName = tourCalCellText(cell, ".month-card-name");
+    var monthSelect = document.querySelector('#calendar-body select[name="month"]');
+    var yearSelect = document.querySelector('#calendar-body select[name="year"]');
+    var month = monthSelect && monthSelect.selectedOptions.length ? monthSelect.selectedOptions[0].textContent.trim() : "";
+    var year = yearSelect && yearSelect.selectedOptions.length ? yearSelect.selectedOptions[0].textContent.trim() : "";
+    var label = monthName ? monthName + " " + year : (month + " " + day + ", " + year);
+    var premiumNode = cell.querySelector(".calendar-premium, .month-card-premium");
+    var premium = premiumNode ? premiumNode.textContent.trim() : "";
+    var premiumSign = premiumNode && premiumNode.classList.contains("neg") ? "neg" : "pos";
+    var trades = tourCalCellText(cell, ".calendar-trades, .month-card-trades");
+    var closed = tourCalCellText(cell, ".calendar-closed, .month-card-closed");
+    var panel = document.createElement("div");
+    panel.className = "tour-cal-summary";
+    var html = "<h3>" + esc(label.replace(/\s+/g, " ").trim()) + "</h3>";
+    html += '<div class="tour-cal-row"><span class="muted">Net Premium</span><strong class="' + premiumSign + '">' + esc(premium) + "</strong></div>";
+    if (trades) html += '<div class="tour-cal-row"><span class="muted">Trades</span><strong>' + esc(trades) + "</strong></div>";
+    if (closed) html += '<div class="tour-cal-row"><span class="muted">' + esc(closed.replace(/:.*$/, "")) + "</span><strong>" + esc(closed.replace(/^[^:]*:\s*/, "")) + "</strong></div>";
+    panel.innerHTML = html;
+    document.body.appendChild(panel);
+  }
+
+  // --- the 23 steps, mirroring the reference tour ---
+  // group: {i, n} renders an n-segment progress bar with the first i
+  // segments filled. clickThrough steps advance by clicking the ring.
+
   var TOUR_STEPS = [
     {
       page: "positions",
       target: '[data-tour="broker"]',
       title: "Welcome to OptionTracker",
       body: "Let's get you started. First, you'll need to connect your broker account to view your positions.",
-      hint: "Click the highlighted area to continue",
       clickThrough: true,
     },
     {
@@ -408,46 +527,255 @@
       next: true,
     },
     {
-      page: "positions",
+      page: "broker",
       target: ".summary-card",
       title: "Account Summary",
-      body: "Your total value, options and equity positions at a glance.",
-      previous: true,
+      body: "This is your Account Summary. It shows total account value, options and equity positions, margin, PnL, and cash in one place. You can expand or collapse it and use it as a quick reference while you trade.",
       next: true,
     },
     {
-      page: "positions",
-      target: "#positions-table",
+      page: "broker",
+      target: '[data-tour="positions"]',
       title: "Live Positions Overview",
-      body: "Your open option strategies with live prices and greeks. Click a row to see per-leg details.",
+      body: "Click on 'Option Positions' in the sidebar to view your live option positions.",
+      clickThrough: true,
+      group: { i: 1, n: 2 },
+    },
+    {
+      page: "positions",
+      target: "#positions-split .page-card",
+      title: "Live Positions Overview",
+      body: "This section shows all your active option positions. Use the symbol and strategy filters to narrow the list. Click any row to expand and see detailed leg information, and sort by any column to organize your view.",
       previous: true,
       next: true,
+      group: { i: 2, n: 2 },
+      ensure: positionsState(false, false, false),
     },
     {
       page: "positions",
       target: "#tv-toggle",
       title: "TradingView",
-      body: "Open an embedded chart panel for your symbols.",
-      previous: true,
-      next: true,
+      body: "Click here to open TradingView charts for your positions.",
+      clickThrough: true,
+      group: { i: 1, n: 2 },
+      ensure: positionsState(false, false, false),
+      action: function () {
+        setTourTvOpen(true);
+      },
     },
     {
       page: "positions",
-      target: "#strategy-dropdown",
-      title: "Filters",
-      body: "Narrow positions by strategy or symbol.",
+      target: "#tv-panel",
+      title: "TradingView",
+      body: "This panel displays interactive TradingView charts for your positions. You can switch between different symbols using the watchlist, analyze price movements, and use all TradingView charting tools. The panel can be expanded to full screen or closed when you're done.",
       previous: true,
       next: true,
+      group: { i: 2, n: 2 },
+      ensure: positionsState(true, false, false),
+    },
+    {
+      page: "positions",
+      target: function () {
+        return tourFirstRow();
+      },
+      title: "Roll Candidates",
+      body: "Click a position row to expand its per-leg details and roll options.",
+      clickThrough: true,
+      group: { i: 1, n: 4 },
+      ensure: positionsState(false, false, false),
+      action: function () {
+        setTourRowExpanded(true);
+      },
+    },
+    {
+      page: "positions",
+      target: function () {
+        var detail = tourDetailRow();
+        return detail ? detail.querySelector(".roll-btn") : null;
+      },
+      title: "Roll Candidates",
+      body: "Click the Roll Selection button to find optimal roll strategies for this position.",
+      clickThrough: true,
+      group: { i: 2, n: 4 },
+      ensure: positionsState(false, true, false),
+      action: function () {
+        setTourRollDialogOpen(true);
+      },
+    },
+    {
+      page: "positions",
+      target: function () {
+        var dialog = tourRollDialog();
+        if (!dialog) return null;
+        return dialog.querySelector(".roll-table tbody tr") || dialog;
+      },
+      title: "Roll Candidates",
+      body: "Click on the row to select a roll candidate. You can select multiple candidates to combine them into a roll strategy.",
+      clickThrough: true,
+      group: { i: 3, n: 4 },
+      ensure: positionsState(false, true, true),
+    },
+    {
+      page: "positions",
+      target: function () {
+        var dialog = tourRollDialog();
+        return dialog ? dialog.querySelector(".roll-save") : null;
+      },
+      title: "Roll Candidates",
+      body: "Click the Save Selection button to save your roll candidate choices. This will link the selected candidates to your current position.",
+      next: true,
+      group: { i: 4, n: 4 },
+      ensure: positionsState(false, true, true),
+    },
+    {
+      page: "wheel",
+      target: "main .page-card",
+      title: "Wheel Strategy Campaigns",
+      body: "Wheel Campaigns shows shares tied to active Wheel strategies. You can review the campaign, adjusted cost basis, collected premium, and customize which transactions belong to each wheel.",
+      next: true,
+      group: { i: 1, n: 2 },
+    },
+    {
+      page: "wheel",
+      target: '.sidenav-subitem[href*="equities"]',
+      title: "Equity Positions Overview",
+      body: "The Equity Positions tab shows your full stock and ETF holdings, including shares that are not part of a Wheel Campaign.",
+      previous: true,
+      next: true,
+      group: { i: 2, n: 2 },
+    },
+    {
+      page: "wheel",
+      target: 'a.sidenav-item[href*="analytics"]',
+      title: "Analytics Overview",
+      body: "Click on 'Analytics' in the sidebar to view your analytics dashboard.",
+      clickThrough: true,
+      group: { i: 1, n: 2 },
+    },
+    {
+      page: "analytics",
+      target: "#analytics-body",
+      title: "Analytics Overview",
+      body: "Track your performance with detailed analytics and PnL charts.",
+      previous: true,
+      next: true,
+      group: { i: 2, n: 2 },
+    },
+    {
+      page: "analytics",
+      target: '.sidenav-subitem[href*="flow"]',
+      title: "PnL Flow",
+      body: "Click PnL Flow to see how finalized options PnL moves from symbols through call/put or strategy type into gains and losses.",
+      clickThrough: true,
+      group: { i: 1, n: 2 },
+    },
+    {
+      page: "pnl_flow",
+      target: "#flow-body",
+      title: "PnL Flow",
+      body: "This chart shows PnL flow by symbol, call or put, strategy, and date. Use the filters to focus on a smaller set of finalized trades.",
+      previous: true,
+      next: true,
+      group: { i: 2, n: 2 },
+    },
+    {
+      page: "pnl_flow",
+      target: 'a.sidenav-item[href*="calendar"]',
+      title: "Calendar View",
+      body: "Click the Calendar item to view your PnL organized by date. This calendar view helps you see which time periods had the most profit or loss.",
+      clickThrough: true,
+      group: { i: 1, n: 4 },
+    },
+    {
+      page: "calendar",
+      target: "#calendar-body",
+      title: "Calendar View",
+      body: "This calendar view shows your PnL by week or month. You can see which time periods had the most profit or loss.",
+      previous: true,
+      next: true,
+      group: { i: 2, n: 4 },
+      ensure: function () {
+        setTourCalSummaryOpen(false);
+      },
+    },
+    {
+      page: "calendar",
+      target: function () {
+        return tourCalCell();
+      },
+      title: "Calendar View",
+      body: "Click on the highlighted cell to view a detailed summary of that period, including all trades and their PnL breakdown.",
+      clickThrough: true,
+      previous: true,
+      group: { i: 3, n: 4 },
+      ensure: function () {
+        setTourCalSummaryOpen(false);
+      },
+      action: function () {
+        setTourCalSummaryOpen(true);
+      },
+    },
+    {
+      page: "calendar",
+      target: ".tour-cal-summary",
+      title: "Calendar View",
+      body: "This dialog shows a detailed breakdown of the selected time period. You can see the net premium, trade count, and closed winners and losers.",
+      previous: true,
+      next: true,
+      group: { i: 4, n: 4 },
+      ensure: function () {
+        setTourCalSummaryOpen(true);
+      },
+    },
+    {
+      page: "calendar",
+      target: 'a.sidenav-item[href*="history"]',
+      title: "History Overview",
+      body: "Click on 'History' in the sidebar to view your historical trades database.",
+      clickThrough: true,
+      group: { i: 1, n: 2 },
+      ensure: function () {
+        setTourCalSummaryOpen(false);
+      },
+    },
+    {
+      page: "history",
+      target: "main .page-card",
+      title: "History Overview",
+      body: "This is your historical trades database. You can search by symbol or option strategy to review past trades, including strike price, P&L, and fees.",
+      previous: true,
+      finish: true,
+      group: { i: 2, n: 2 },
     },
   ];
 
+  var TOUR_PAGE_PATHS = {
+    positions: "",
+    broker: "broker/",
+    wheel: "wheel/",
+    equities: "equities/",
+    analytics: "analytics/",
+    pnl_flow: "analytics/flow/",
+    calendar: "calendar/",
+    history: "history/",
+  };
+
   function tourPage() {
-    return window.location.pathname.indexOf("/broker") !== -1 ? "broker" : "positions";
+    var path = window.location.pathname;
+    if (path.indexOf("/broker") !== -1) return "broker";
+    if (path.indexOf("/wheel") !== -1) return "wheel";
+    if (path.indexOf("/equities") !== -1) return "equities";
+    if (path.indexOf("/analytics/flow") !== -1) return "pnl_flow";
+    if (path.indexOf("/analytics") !== -1) return "analytics";
+    if (path.indexOf("/calendar") !== -1) return "calendar";
+    if (path.indexOf("/history") !== -1) return "history";
+    return "positions";
   }
 
   function tourPageUrl(page) {
-    var link = document.querySelector(page === "broker" ? '[data-tour="broker"]' : '[data-tour="positions"]');
-    return link ? link.href : null;
+    var base = document.querySelector('[data-tour="positions"]');
+    if (!base || TOUR_PAGE_PATHS[page] === undefined) return null;
+    return base.href + TOUR_PAGE_PATHS[page];
   }
 
   function clearTourStep() {
@@ -466,18 +794,52 @@
     }
   }
 
-  function endTour() {
-    clearTourStep();
-    document.querySelectorAll(".tour-overlay, .tour-spotlight, .tour-popover").forEach(function (node) {
-      node.remove();
-    });
-  }
-
   function removeTourNodes() {
     document.querySelectorAll(".tour-overlay, .tour-spotlight, .tour-popover").forEach(function (node) {
       node.remove();
     });
   }
+
+  function endTour() {
+    clearTourStep();
+    removeTourNodes();
+    setTourCalSummaryOpen(false);
+    document.querySelectorAll("dialog.tour-open").forEach(function (dialog) {
+      dialog.classList.remove("tour-open");
+      if (dialog.open) dialog.close();
+    });
+  }
+
+  function resolveTourTarget(step) {
+    if (typeof step.target === "function") return step.target();
+    return document.querySelector(step.target);
+  }
+
+  // Advance past a click-through step: run its action, then either show
+  // the next step in place or persist the index and follow the navigation.
+  function advanceTour(index, target) {
+    var step = TOUR_STEPS[index];
+    var next = TOUR_STEPS[index + 1];
+    if (step.action) step.action(target);
+    if (!next) {
+      endTour();
+      return;
+    }
+    if (next.page !== tourPage()) {
+      removeTourNodes();
+      saveTourStep(index + 1);
+      var url = target && target.tagName === "A" && target.href ? target.href : tourPageUrl(next.page);
+      if (url) window.location.href = url;
+      else endTour();
+      return;
+    }
+    showTourStep(index + 1);
+  }
+
+  var TOUR_CHEV_LEFT =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>';
+  var TOUR_CHEV_RIGHT =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
 
   function showTourStep(index) {
     removeTourNodes();
@@ -492,15 +854,16 @@
       if (url) window.location.href = url;
       return;
     }
-    var target = document.querySelector(step.target);
+    if (step.ensure) step.ensure();
+    var target = resolveTourTarget(step);
     if (!target) {
       clearTourStep();
       return;
     }
     target.scrollIntoView({ block: "center", inline: "nearest" });
     var rect = target.getBoundingClientRect();
-    // Clamp tall targets (the positions table) to the viewport so the
-    // spotlight ring stays fully visible.
+    // Clamp tall targets (the positions table, history list) to the
+    // viewport so the spotlight ring stays fully visible.
     var boxTop = Math.max(rect.top, 8);
     var boxBottom = Math.min(rect.bottom, window.innerHeight - 8);
 
@@ -510,17 +873,16 @@
 
     var spotlight = document.createElement("div");
     spotlight.className = "tour-spotlight";
-    spotlight.style.top = boxTop - 6 + "px";
-    spotlight.style.left = rect.left - 6 + "px";
-    spotlight.style.width = rect.width + 12 + "px";
-    spotlight.style.height = boxBottom - boxTop + 12 + "px";
+    spotlight.style.top = boxTop + "px";
+    spotlight.style.left = rect.left + "px";
+    spotlight.style.width = rect.width + "px";
+    spotlight.style.height = boxBottom - boxTop + "px";
     if (step.clickThrough) {
       spotlight.classList.add("clickable");
       spotlight.setAttribute("role", "button");
-      spotlight.setAttribute("aria-label", "Go to " + step.title);
+      spotlight.setAttribute("aria-label", "Click to continue tutorial");
       spotlight.addEventListener("click", function () {
-        removeTourNodes();
-        showTourStep(index + 1);
+        advanceTour(index, target);
       });
     } else {
       spotlight.style.pointerEvents = "none";
@@ -532,22 +894,38 @@
       '<button type="button" class="icon-btn tour-close" aria-label="Close tutorial">✕</button>' +
       "<h4>" + esc(step.title) + "</h4>" +
       "<p>" + esc(step.body) + "</p>";
-    if (step.hint) html += '<p class="tour-hint">' + esc(step.hint) + "</p>";
-    if (step.previous || step.next) {
-      html += '<div class="tour-nav">';
-      if (step.previous) html += '<button type="button" class="btn tour-prev">‹ Previous</button>';
-      if (step.next) html += '<button type="button" class="btn btn-primary tour-next">Next ›</button>';
+    if (step.group) {
+      html += '<div class="tour-progress">';
+      for (var s = 0; s < step.group.n; s++) {
+        html += '<span class="seg' + (s < step.group.i ? " fill" : "") + '"></span>';
+      }
       html += "</div>";
     }
+    html += '<div class="tour-foot"><div class="tour-foot-btns">';
+    if (step.previous) {
+      html += '<button type="button" class="tour-btn tour-prev">' + TOUR_CHEV_LEFT + "Previous</button>";
+    }
+    html += "</div>";
+    if (step.clickThrough) {
+      html += '<div class="tour-hint">Click the highlighted area to continue</div>';
+    } else if (step.finish) {
+      html += '<button type="button" class="tour-btn tour-next">Finish</button>';
+    } else if (step.next) {
+      html += '<button type="button" class="tour-btn tour-next">Next' + TOUR_CHEV_RIGHT + "</button>";
+    }
+    html += "</div>";
     popover.innerHTML = html;
     popover.querySelector(".tour-close").addEventListener("click", endTour);
     var prevButton = popover.querySelector(".tour-prev");
-    if (prevButton) prevButton.addEventListener("click", function () { showTourStep(index - 1); });
+    if (prevButton) {
+      prevButton.addEventListener("click", function () {
+        showTourStep(index - 1);
+      });
+    }
     var nextButton = popover.querySelector(".tour-next");
     if (nextButton) {
       nextButton.addEventListener("click", function () {
-        if (index + 1 >= TOUR_STEPS.length) endTour();
-        else showTourStep(index + 1);
+        advanceTour(index, null);
       });
     }
 
@@ -555,15 +933,31 @@
     document.body.appendChild(spotlight);
     document.body.appendChild(popover);
 
+    // Placement, mirroring the reference: centered below the target, then
+    // above; sidebar targets get the popover on their right instead.
     var popRect = popover.getBoundingClientRect();
-    var top = boxTop - popRect.height - 14;
-    if (top < 8) top = Math.min(boxBottom + 14, window.innerHeight - popRect.height - 8);
-    var left = Math.min(Math.max(rect.left + 8, 8), window.innerWidth - popRect.width - 8);
-    popover.style.top = top + "px";
-    popover.style.left = left + "px";
+    var popW = popRect.width;
+    var popH = popRect.height;
+    var top = null;
+    var left = null;
+    if (rect.left < 320 && rect.left + rect.width + 16 + popW < window.innerWidth - 8) {
+      left = rect.left + rect.width + 16;
+      top = (boxTop + boxBottom) / 2 - popH / 2;
+    } else if (boxBottom + 16 + popH < window.innerHeight - 8) {
+      top = boxBottom + 16;
+      left = rect.left + rect.width / 2 - popW / 2;
+    } else if (boxTop - 16 - popH >= 8) {
+      top = boxTop - 16 - popH;
+      left = rect.left + rect.width / 2 - popW / 2;
+    } else {
+      top = window.innerHeight - popH - 16;
+      left = rect.left + rect.width / 2 - popW / 2;
+    }
+    popover.style.top = Math.min(Math.max(top, 8), window.innerHeight - popH - 8) + "px";
+    popover.style.left = Math.min(Math.max(left, 8), window.innerWidth - popW - 8) + "px";
   }
 
-  // Resume a tour in progress after the cross-page navigation.
+  // Resume a tour in progress after a cross-page navigation.
   (function () {
     var saved = null;
     try {
