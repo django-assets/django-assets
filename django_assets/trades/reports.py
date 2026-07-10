@@ -1493,6 +1493,7 @@ class MonthDetail:
     trading_days: int
     daily: "list[tuple[datetime.date, Decimal]]"  # ascending
     worst_day: "tuple[datetime.date, Decimal] | None"
+    best_day: "tuple[datetime.date, Decimal] | None"
     transactions: "list[ClosedStrategy]"
 
 
@@ -1539,7 +1540,72 @@ def month_detail(user: Any, year: int, month: int) -> MonthDetail:
         trading_days=len(daily),
         daily=daily,
         worst_day=min(daily, key=lambda kv: kv[1]) if daily else None,
+        best_day=max(daily, key=lambda kv: kv[1]) if daily else None,
         transactions=rows,
+    )
+
+
+@dataclass(frozen=True)
+class RealizedPeriod:
+    """Realized-PnL aggregate over CLOSED strategies for a calendar
+    period — the Week/Month calendar cells (which show PnL, unlike the
+    premium 'paycheck' Day cells)."""
+
+    pnl: Decimal
+    trades: int
+    wins: int
+    losses: int
+
+
+def _realized_buckets(
+    user: Any, key: "Any", *, underlyings: "list[str] | None" = None
+) -> "dict[Any, RealizedPeriod]":
+    wanted = {code.upper() for code in underlyings} if underlyings else None
+    acc: dict[Any, dict[str, Any]] = defaultdict(
+        lambda: {"pnl": Decimal(0), "trades": 0, "wins": 0, "losses": 0}
+    )
+    for row in closed_option_strategies(user):
+        if row.closed_on is None:
+            continue
+        if wanted is not None and (
+            row.underlying is None or row.underlying.code.upper() not in wanted
+        ):
+            continue
+        bucket = key(row.closed_on)
+        if bucket is None:
+            continue
+        cell = acc[bucket]
+        cell["pnl"] += row.net_profit
+        cell["trades"] += 1
+        cell["wins" if row.net_profit > 0 else "losses"] += 1
+    return {
+        bucket: RealizedPeriod(
+            pnl=cell["pnl"], trades=cell["trades"], wins=cell["wins"], losses=cell["losses"]
+        )
+        for bucket, cell in acc.items()
+    }
+
+
+def realized_months(
+    user: Any, year: int, *, underlyings: "list[str] | None" = None
+) -> "dict[int, RealizedPeriod]":
+    """Per-month realized PnL for `year` (Month-view cells; agrees with
+    month_detail's total exactly)."""
+    return _realized_buckets(
+        user,
+        lambda on: on.month if on.year == year else None,
+        underlyings=underlyings,
+    )
+
+
+def realized_weeks(
+    user: Any, year: int, *, underlyings: "list[str] | None" = None
+) -> "dict[datetime.date, RealizedPeriod]":
+    """Per-ISO-week realized PnL (Week-view cells), keyed by week Monday."""
+    return _realized_buckets(
+        user,
+        lambda on: (on - datetime.timedelta(days=on.weekday())) if on.year == year else None,
+        underlyings=underlyings,
     )
 
 

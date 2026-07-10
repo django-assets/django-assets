@@ -1075,3 +1075,34 @@ def test_roll_link_none_for_non_option_trade(user, usd, accounts, spy):
         fraction=1,
     )
     assert roll_link_candidates(user, trade, Marks({})) is None
+
+
+def test_month_detail_best_and_worst_day(user, closed):
+    from django_assets.trades.reports import month_detail
+
+    d = month_detail(user, 2026, 6)
+    assert d.best_day == (datetime.date(2026, 6, 6), d.transactions[0].net_profit)
+    assert d.worst_day == d.best_day  # single closure this month
+
+
+def test_realized_months_match_month_detail(user, closed):
+    from django_assets.trades.reports import month_detail, realized_months
+
+    months = realized_months(user, 2026)
+    june = months[6]
+    d = month_detail(user, 2026, 6)
+    # Calendar Month-view cells must agree with the dialog exactly.
+    assert june.pnl == d.total_pnl
+    assert june.trades == d.wins + d.losses
+    assert june.wins == d.wins and june.losses == d.losses
+
+
+def test_realized_weeks_bucket_by_iso_monday(user, closed):
+    from django_assets.trades.reports import realized_weeks
+
+    weeks = realized_weeks(user, 2026)
+    # closed fixture closes 2026-06-06 (a Saturday) → ISO week Monday 06-01
+    monday = datetime.date(2026, 6, 1)
+    assert monday in weeks
+    assert weeks[monday].trades == 1
+    assert weeks[monday].pnl == 446.25 - 13.00  # realized − fees
