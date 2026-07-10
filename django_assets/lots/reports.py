@@ -78,14 +78,14 @@ def unrealized(
     price_source: Any,
     instrument: Instrument | None = None,
 ) -> "dict[str, Any]":
-    """Open positions marked via a PriceSource (ADR-0034): unpriced
-    lots are surfaced, never zeroed."""
+    """Open positions marked via a PriceSource at its best-available
+    quote (ADR-0034/0039): unpriced lots are surfaced, never zeroed."""
     from django_assets.lots.queries import open_lots
 
     total = Decimal(0)
     unpriced: list[str] = []
     for lot in open_lots(account, instrument):
-        quote = price_source.get_price(lot.instrument)
+        quote = price_source.get_quote(lot.instrument)
         if quote is None:
             unpriced.append(lot.instrument.code)
             continue

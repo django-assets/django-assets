@@ -10,7 +10,6 @@ the same query shape (ADR-0013).
 import datetime
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import TYPE_CHECKING, Protocol
 
 from django.db.models import Sum
 
@@ -18,17 +17,7 @@ from django_assets.core.intake import to_decimal
 from django_assets.core.measure import Measure
 from django_assets.core.measure import value as measure_value
 from django_assets.core.models import Account, Instrument
-
-if TYPE_CHECKING:
-    from django_assets.core.prices import PriceQuote
-
-
-class SupportsGetPrice(Protocol):
-    """Structural PriceSource contract (ADR-0034): anything with get_price."""
-
-    def get_price(
-        self, instrument: Instrument, *, at: datetime.datetime | None = None
-    ) -> "PriceQuote | None": ...
+from django_assets.core.prices import PriceQuote, PriceSource
 
 
 class Holding:
@@ -78,11 +67,17 @@ class Portfolio:
     @staticmethod
     def value(
         account: Account,
-        price_source: SupportsGetPrice,
+        price_source: PriceSource,
         *,
         as_of: datetime.datetime | None = None,
     ) -> PortfolioValue:
-        """Positions from Portfolio.at, priced per the ADR-0034 protocol.
+        """Positions from Portfolio.at, priced per the ADR-0039 protocol.
+
+        Current valuations (as_of=None) mark at the source's best
+        available quote (`get_quotes(kind=None)` — one batch call, the
+        downgrade visible on each quote's kind). Dated valuations mark at
+        the official close of as_of's calendar date via `get_close`; a
+        non-session date leaves positions unpriced — never interpolated.
 
         Currency positions (price_currency is NULL) are their own value —
         no quote is consulted (ADR-0013). quote.currency must equal
@@ -96,11 +91,19 @@ class Portfolio:
         def add(currency: Instrument, measure: Measure) -> None:
             totals[currency] = totals.get(currency, Measure(Decimal(0), currency)) + measure
 
-        for instrument, qty in Portfolio.at(account, as_of=as_of).items():
+        positions = Portfolio.at(account, as_of=as_of)
+        priceable = [inst for inst in positions if inst.price_currency is not None]
+        quotes: dict[Instrument, PriceQuote | None]
+        if as_of is None:
+            quotes = price_source.get_quotes(priceable)
+        else:
+            quotes = {inst: price_source.get_close(inst, as_of.date()) for inst in priceable}
+
+        for instrument, qty in positions.items():
             if instrument.price_currency is None:
                 add(instrument, Measure(qty, instrument))
                 continue
-            quote = price_source.get_price(instrument, at=as_of)
+            quote = quotes.get(instrument)
             if quote is None:
                 unpriced.append(instrument)
                 continue
