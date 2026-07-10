@@ -1,4 +1,7 @@
 {% load tracker_format tracker_charts %}
+{% if is_htmx %}
+{% include "optiontracker/_date_range_button.html" with range_btn_id="analytics-range-btn" range_menu_id="analytics-range-menu" range_oob=True %}
+{% endif %}
 <div id="analytics-body">
   <div class="analytics-grid">
     <div class="stat-cards">
@@ -34,10 +37,10 @@
   <div class="chart-row">
     <div class="chart-card">
       <div class="chart-card-head">
-        <h3>Cumulative Profits <span class="info-dot" title="Running total of realized profit from closed strategies. Flip the switch to see per-period bars instead.">i</span></h3>
+        <h3>Cumulative Profits <span class="info-dot">i<span class="tooltip">Running total of realized profit from closed strategies. Flip the switch to see per-period bars instead.</span></span></h3>
         <div class="chart-controls">
           <a class="switch {% if chart == 'cumulative' %}on{% endif %}" role="switch" aria-checked="{% if chart == 'cumulative' %}true{% else %}false{% endif %}"
-             aria-label="Toggle cumulative line" title="Toggle cumulative line / per-period bars"
+             aria-label="Toggle cumulative line"
              href="{{ chart_toggle_url }}" hx-get="{{ chart_toggle_url }}"
              hx-target="#analytics-body" hx-swap="outerHTML" hx-push-url="true"><span class="switch-knob"></span></a>
           <div class="toggle-pill">
@@ -71,7 +74,7 @@
     </div>
     <div class="chart-card">
       <div class="chart-card-head">
-        <h3>Option Profit vs Account Value <span class="info-dot" title="Green: cumulative option profit (right axis). Blue: total account value (left axis).">i</span></h3>
+        <h3>Option Profit vs Account Value <span class="info-dot">i<span class="tooltip">Green: cumulative option profit (right axis). Blue: total account value (left axis).</span></span></h3>
         <div class="legend">
           <span class="legend-dot legend-green"></span>Option cumulative profit
           <span class="legend-dot legend-accent"></span>Account value

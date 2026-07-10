@@ -4,7 +4,7 @@
 {% block content %}
 <section class="card page-card">
   <div class="page-head">
-    <h1>Historical Positions <span class="info-dot" title="Closed option strategies with per-leg fills, fees and close status.">i</span> <span class="badge-demo">Demo data</span></h1>
+    <h1>Historical Positions <span class="info-dot">i<span class="tooltip">Closed option strategies with per-leg fills, fees and close status.</span></span> <span class="badge-demo">Demo data</span></h1>
     <div class="history-totals" id="history-totals">
       {% if assigned_only %}
       <div>Total Assignments: <strong>{{ total_assignments }}</strong></div>
@@ -53,18 +53,7 @@
              hx-include="#history-filters" hx-push-url="true">
       Assigned
     </label>
-    <label class="select-box">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-      <select name="range"
-              hx-get="{% url 'optiontracker:history' %}"
-              hx-trigger="change"
-              hx-target="#history-table" hx-swap="outerHTML"
-              hx-include="#history-filters" hx-push-url="true">
-        {% for code, label in date_ranges %}
-        <option value="{{ code }}" {% if code == range_code %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </label>
+    {% include "optiontracker/_date_range_menu.html" with range_btn_id="history-range-btn" range_menu_id="history-range-menu" range_view="optiontracker:history" range_target="#history-table" range_form="#history-filters" %}
   </form>
 
   {% include "optiontracker/_history_table.html" %}

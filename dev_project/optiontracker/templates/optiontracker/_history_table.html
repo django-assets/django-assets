@@ -12,6 +12,7 @@
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></svg>
   Strategy
 </button>
+{% include "optiontracker/_date_range_button.html" with range_btn_id="history-range-btn" range_menu_id="history-range-menu" range_oob=True %}
 {% endif %}
 <div id="history-table" class="table-wrap">
   {% if assigned_only %}
@@ -46,11 +47,11 @@
         <th>Symbol</th>
         <th>Type (Contracts)</th>
         <th>Expiry</th>
-        <th class="sortable{% if sort_state.trade_date.active %} sorted{% endif %}">
+        <th class="sortable th-mixed{% if sort_state.trade_date.active %} sorted{% endif %}">
           <a hx-get="{{ sort_state.trade_date.url }}" hx-target="#history-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.trade_date.url }}">Trade Date <span class="sort-arrow">{% if sort_state.trade_date.active %}{% if sort_state.trade_date.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
         </th>
         <th class="num">Initial Premium</th>
-        <th class="sortable num{% if sort_state.pnl.active %} sorted{% endif %}">
+        <th class="sortable th-mixed num{% if sort_state.pnl.active %} sorted{% endif %}">
           <a hx-get="{{ sort_state.pnl.url }}" hx-target="#history-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.pnl.url }}">Realized PnL <span class="sort-arrow">{% if sort_state.pnl.active %}{% if sort_state.pnl.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
         </th>
       </tr>

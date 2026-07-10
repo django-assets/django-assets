@@ -1,0 +1,7 @@
+{% comment %}Date Range dropdown toggle. Re-included with range_oob=True
+from the htmx partials so the label follows the current selection.{% endcomment %}
+<button type="button" id="{{ range_btn_id }}" class="btn dropdown-toggle range-toggle" data-dropdown="{{ range_menu_id }}"{% if range_oob %} hx-swap-oob="true"{% endif %}>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+  <span class="range-btn-label">{{ range_label }}</span>
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+</button>

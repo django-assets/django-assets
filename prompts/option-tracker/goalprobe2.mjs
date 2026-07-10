@@ -1,0 +1,15 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch();
+const page = await browser.newContext().then(c => c.newPage());
+page.on('pageerror', e => console.log('PAGEERROR:', e.message));
+page.on('console', m => console.log('CONSOLE:', m.type(), m.text().slice(0,300)));
+page.on('requestfailed', r => console.log('REQFAIL:', r.url(), r.failure()?.errorText));
+await page.goto('http://127.0.0.1:8642/tracker/analytics/', { waitUntil: 'networkidle' });
+console.log('htmx version:', await page.evaluate(() => window.htmx ? window.htmx.version : 'MISSING'));
+const sw = page.locator('.switch');
+console.log('switch box:', JSON.stringify(await sw.boundingBox()));
+await sw.click();
+await page.waitForTimeout(2500);
+console.log('URL:', page.url());
+console.log('bars:', await page.locator('rect.bar').count());
+await browser.close();

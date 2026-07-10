@@ -204,7 +204,8 @@ await page.screenshot({ path: `${OUT}/condor-legs.png`, fullPage: false });
 // ---- 11. minors ----
 await go('/tracker/');
 check('positions: MARKET VALUE header info-dot', await page.locator('th:has-text("Market Value") .info-dot').count() === 1);
-check('positions: DELTA header info-dot', await page.locator('th .info-dot[title*="Delta"]').count() === 1);
+// round-3: tooltips moved from title= to instant CSS .tooltip spans
+check('positions: DELTA header info-dot', await page.locator('th .info-dot:has(.tooltip)', { hasText: 'Delta' }).count() === 1);
 check('summary: Total Value + Cash info-dots', await page.locator('.summary-label .info-dot').count() >= 2);
 check('h1 info-dot', await page.locator('.page-head h1 .info-dot').count() === 1);
 await go('/tracker/analytics/');

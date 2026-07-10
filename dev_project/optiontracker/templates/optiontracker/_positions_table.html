@@ -12,17 +12,17 @@
           <a hx-get="{{ sort_state.expiration.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.expiration.url }}">Expiration <span class="sort-arrow">{% if sort_state.expiration.active %}{% if sort_state.expiration.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
         </th>
         <th class="sortable num{% if sort_state.pnl.active %} sorted{% endif %}">
-          <a class="metric-toggle" title="Click to switch between PnL (%) and PnL ($)" hx-get="{{ pnl_toggle_url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ pnl_toggle_url }}">{% if pnl_mode == 'usd' %}PnL ($){% else %}PnL (%){% endif %}</a>
+          <a class="metric-toggle tip-host" hx-get="{{ pnl_toggle_url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ pnl_toggle_url }}">{% if pnl_mode == 'usd' %}PnL ($){% else %}PnL (%){% endif %}<span class="tooltip">Switch between PnL (%) and PnL ($)</span></a>
           <a hx-get="{{ sort_state.pnl.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.pnl.url }}" aria-label="Sort by PnL"><span class="sort-arrow">{% if sort_state.pnl.active %}{% if sort_state.pnl.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
         </th>
         <th class="sortable num{% if sort_state.market_value.active %} sorted{% endif %}">
           <a hx-get="{{ sort_state.market_value.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.market_value.url }}">Market Value <span class="sort-arrow">{% if sort_state.market_value.active %}{% if sort_state.market_value.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
-          <span class="info-dot" title="Cost to close the option legs at the current mid price.">i</span>
+          <span class="info-dot">i<span class="tooltip">Cost to close the option legs at the current mid price.</span></span>
         </th>
         <th class="sortable num{% if sort_state.delta.active %} sorted{% endif %}">
-          <a class="metric-toggle" title="Click to switch between Delta (%) and Extrinsic ($)" hx-get="{{ metric_toggle_url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ metric_toggle_url }}">{% if metric == 'extrinsic' %}Extrinsic ($){% else %}Delta (%){% endif %}</a>
+          <a class="metric-toggle tip-host" hx-get="{{ metric_toggle_url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ metric_toggle_url }}">{% if metric == 'extrinsic' %}Extrinsic ($){% else %}Delta (%){% endif %}<span class="tooltip">Switch between Delta (%) and Extrinsic ($)</span></a>
           <a hx-get="{{ sort_state.delta.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.delta.url }}" aria-label="Sort by delta"><span class="sort-arrow">{% if sort_state.delta.active %}{% if sort_state.delta.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
-          <span class="info-dot" title="Delta (%): the primary leg's probability-style delta. Extrinsic ($): time value remaining across the position's legs.">i</span>
+          <span class="info-dot">i<span class="tooltip">Delta (%): the primary leg's probability-style delta. Extrinsic ($): time value remaining across the position's legs.</span></span>
         </th>
         <th class="sortable num{% if sort_state.moneyness.active %} sorted{% endif %}">
           <a hx-get="{{ sort_state.moneyness.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.moneyness.url }}">Moneyness <span class="sort-arrow">{% if sort_state.moneyness.active %}{% if sort_state.moneyness.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
@@ -38,7 +38,7 @@
           <svg class="row-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
           <span class="sym-avatar">{{ row.underlying.code|slice:":1" }}</span>
           <span class="sym-text">
-            <a class="sym-link" href="https://www.tradingview.com/chart/?symbol={{ row.underlying.code|urlencode }}" target="_blank" rel="noopener" title="Open {{ row.underlying.code }} on TradingView">{{ row.underlying.code }}</a>
+            <a class="sym-link" href="https://www.tradingview.com/chart/?symbol={{ row.underlying.code|urlencode }}" target="_blank" rel="noopener" aria-label="Open {{ row.underlying.code }} on TradingView">{{ row.underlying.code }}</a>
             {% if entry.underlying_price is not None %}<span class="sym-price">({{ entry.underlying_price|plain_number }})</span>{% endif %}
           </span>
         </td>
@@ -54,14 +54,14 @@
           {% if pnl_mode == 'usd' %}
             {% if row.rolls %}
             <span class="{{ row.pnl_incl_rolls|sign_class }}">{{ row.pnl_incl_rolls|money }}</span>
-            <span class="info-dot" title="PnL includes realized PnL from rolled selections. Expand the row to view details.">i</span>
+            <span class="info-dot info-dot-solid">i<span class="tooltip">PnL includes realized PnL from rolled selections. Expand the row to view details.</span></span>
             {% else %}
             <span class="{{ row.unrealized_pnl|sign_class }}">{{ row.unrealized_pnl|money }}</span>
             {% endif %}
           {% else %}
             {% if row.rolls %}
             <span class="{{ row.pnl_pct_incl_rolls|sign_class }}">{{ row.pnl_pct_incl_rolls|pct0 }}</span>
-            <span class="info-dot" title="PnL includes realized PnL from rolled selections. Expand the row to view details.">i</span>
+            <span class="info-dot info-dot-solid">i<span class="tooltip">PnL includes realized PnL from rolled selections. Expand the row to view details.</span></span>
             {% else %}
             <span class="{{ row.pnl_pct|sign_class }}">{{ row.pnl_pct|pct0 }}</span>
             {% endif %}
@@ -80,9 +80,10 @@
           {% if row.moneyness %}<span class="{% if row.moneyness == 'ITM' %}neg{% else %}pos{% endif %}">({{ row.moneyness }})</span>{% endif %}
         </td>
         <td class="num">
-          <button type="button" class="icon-btn share-btn" title="Copy position summary"
+          <button type="button" class="icon-btn share-btn tip-host" aria-label="Copy position summary"
                   data-share="{{ row.underlying.code }} {{ row.strategy|strategy_label }} ({{ row.contracts }}) exp {{ row.expiration|date:'Y-m-d' }} | PnL {{ row.pnl_pct|pct0 }} | Market Value {{ row.market_value|money }} | Delta {{ row.delta_pct|pct1 }} | {{ row.moneyness_pct|pct0 }} ({{ row.moneyness }})">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+            <span class="tooltip">Copy position summary</span>
           </button>
         </td>
       </tr>
@@ -104,10 +105,10 @@
               {% endif %}
             </div>
             <div class="detail-actions">
-              <a class="btn tv-icon-btn" href="https://www.tradingview.com/chart/?symbol={{ row.underlying.code|urlencode }}" target="_blank" rel="noopener" title="Open TradingView chart for {{ row.underlying.code }}" aria-label="Open TradingView chart for {{ row.underlying.code }}">
+              <a class="btn tv-icon-btn" href="https://www.tradingview.com/chart/?symbol={{ row.underlying.code|urlencode }}" target="_blank" rel="noopener" aria-label="Open TradingView chart for {{ row.underlying.code }}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
               </a>
-              <button type="button" class="btn btn-primary roll-btn" data-dialog="roll-dialog-{{ row.trade.pk }}" title="View roll selection">
+              <button type="button" class="btn btn-primary roll-btn" data-dialog="roll-dialog-{{ row.trade.pk }}">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/></svg>
                 {% if row.rolls %}Modify Roll{% else %}Roll Selection{% endif %}
               </button>
@@ -185,7 +186,7 @@
       </tr>
       {% endwith %}
       {% empty %}
-      <tr><td colspan="8" class="empty-row">No open option positions match the selected filters.</td></tr>
+      <tr><td colspan="8" class="empty-row">{% if query %}No live option positions match symbol "{{ query }}".{% else %}No live option positions match the selected filters.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

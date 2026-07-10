@@ -38,11 +38,15 @@ _DONUT_PALETTE = [
 
 
 def _tick_label(value: float) -> str:
+    """Reference axis captions: two-decimal thousands ("$180.00K",
+    "-$10.00K") with zero rendered plainly as "$0.00"."""
     sign = "-" if value < 0 else ""
     magnitude = abs(value)
-    if magnitude >= 1000:
-        return f"{sign}${magnitude / 1000:,.1f}K"
-    return f"{sign}${magnitude:,.0f}"
+    if magnitude < 0.005:
+        return "$0.00"
+    if magnitude >= 10:
+        return f"{sign}${magnitude / 1000:,.2f}K"
+    return f"{sign}${magnitude:,.2f}"
 
 
 def _nice_ticks(low: float, high: float, count: int = 5) -> list[float]:
@@ -84,15 +88,23 @@ def profit_bar_chart(profit: dict, mode: str = "monthly", goal: object = None) -
     def y_of(value: float) -> float:
         return pad_top + (high - value) / (high - low) * plot_h
 
-    label_step = max(1, math.ceil(len(items) / 13))
+    # Reference x-axis: month names in every mode. Weekly buckets caption
+    # only the first bucket of each month; monthly buckets are thinned to
+    # at most ~13 captions.
+    label_step = max(1, math.ceil(len(items) / 13)) if mode != "weekly" else 1
     bars = []
     slot = plot_w / max(len(items), 1)
     bar_w = min(46.0, slot * 0.6)
+    previous_month: tuple | None = None
     for index, (period, amount) in enumerate(items):
         value = float(amount)
         top = y_of(max(value, 0.0))
         bottom = y_of(min(value, 0.0))
-        label = f"{period.month}/{period.day}" if mode == "weekly" else _MONTHS[period.month - 1]
+        label = _MONTHS[period.month - 1]
+        if mode == "weekly":
+            if (period.year, period.month) == previous_month:
+                label = ""
+            previous_month = (period.year, period.month)
         bars.append(
             {
                 "x": pad_left + slot * index + (slot - bar_w) / 2,
@@ -128,8 +140,8 @@ def cumulative_profit_chart(
 ) -> dict:
     """Cumulative-profit line with area fill (the Cumulative Profits
     card's default look): PerformanceStats.daily_cumulative IS the
-    running-profit curve; `mode` only picks the x-axis bucket labels
-    (month names vs week starts). The goal input draws a dashed line."""
+    running-profit curve; the x-axis captions month names in every mode
+    (reference behavior). The goal input draws a dashed line."""
     width, height = 860.0, 300.0
     pad_left, pad_right, pad_top, pad_bottom = 64.0, 16.0, 16.0, 28.0
     plot_w = width - pad_left - pad_right
@@ -171,22 +183,16 @@ def cumulative_profit_chart(
 
     ticks = [{"y": y_of(value), "label": _tick_label(value)} for value in _nice_ticks(low, high)]
 
-    # Bucket labels: one per month (monthly) or per ISO week (weekly),
-    # thinned so at most ~13 captions render.
+    # Bucket labels (reference): month names in every mode — one caption
+    # at the first data point of each month, thinned past ~13 captions.
     seen: set = set()
     x_ticks = []
     for day, _value in daily_cumulative:
-        if mode == "monthly":
-            key = (day.year, day.month)
-            label = _MONTHS[day.month - 1]
-        else:
-            iso = day.isocalendar()
-            key = (iso[0], iso[1])
-            label = f"{day.month}/{day.day}"
+        key = (day.year, day.month)
         if key in seen:
             continue
         seen.add(key)
-        x_ticks.append({"x": x_of(day.toordinal()), "label": label})
+        x_ticks.append({"x": x_of(day.toordinal()), "label": _MONTHS[day.month - 1]})
     step = max(1, math.ceil(len(x_ticks) / 13))
     x_ticks = x_ticks[::step]
 
@@ -426,6 +432,21 @@ def pnl_flow_chart(summary) -> dict:
     return {"width": width, "height": height, "empty": False, "nodes": nodes, "ribbons": ribbons}
 
 
+#: Reference legend order for the Strategies Count donut (fixed vocabulary
+#: first, anything else appended alphabetically).
+_LEGEND_ORDER = [
+    "Call Credit Spread",
+    "Call Debit Spread",
+    "Iron Condor",
+    "Long Call",
+    "Long Put",
+    "Put Credit Spread",
+    "Put Debit Spread",
+    "Covered Call",
+    "Cash Secured Put",
+]
+
+
 @register.inclusion_tag("optiontracker/charts/donut_chart.html")
 def strategy_donut(strategy_counts: dict) -> dict:
     """Donut arcs for Strategies Count (counts, not money): fixed-order
@@ -436,8 +457,13 @@ def strategy_donut(strategy_counts: dict) -> dict:
     stroke = 34.0
     gap_deg = 2.2
 
-    # Legend/arc order: biggest strategy first (reference behavior).
-    items = sorted(strategy_counts.items(), key=lambda kv: (-kv[1], strategy_label(kv[0]).lower()))
+    # Legend/arc order: the reference's fixed strategy order.
+    def legend_rank(slug: str) -> "tuple[int, str]":
+        label = strategy_label(slug)
+        rank = _LEGEND_ORDER.index(label) if label in _LEGEND_ORDER else len(_LEGEND_ORDER)
+        return (rank, label.lower())
+
+    items = sorted(strategy_counts.items(), key=lambda kv: legend_rank(kv[0]))
     total = 0
     for _slug, count in items:
         total += count

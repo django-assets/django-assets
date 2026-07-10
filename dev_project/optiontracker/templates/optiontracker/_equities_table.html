@@ -5,10 +5,10 @@
       <tr>
         <th>Symbol</th>
         <th class="num">Shares</th>
-        <th class="num">Cost Basis <span class="info-dot" title="Average price paid per share (assignment strike cash counts as basis).">i</span></th>
+        <th class="num">Cost Basis <span class="info-dot">i<span class="tooltip">Average price paid per share (assignment strike cash counts as basis).</span></span></th>
         <th class="num">Market Value</th>
         <th class="num">
-          <a class="metric-toggle" title="Click to switch between PnL (%) and PnL ($)" hx-get="{{ pnl_toggle_url }}" hx-target="#equities-table" hx-swap="outerHTML" hx-push-url="true" href="{{ pnl_toggle_url }}">{% if pnl_mode == 'usd' %}PnL ($){% else %}PnL (%){% endif %}</a>
+          <a class="metric-toggle tip-host" hx-get="{{ pnl_toggle_url }}" hx-target="#equities-table" hx-swap="outerHTML" hx-push-url="true" href="{{ pnl_toggle_url }}">{% if pnl_mode == 'usd' %}PnL ($){% else %}PnL (%){% endif %}<span class="tooltip">Switch between PnL (%) and PnL ($)</span></a>
         </th>
       </tr>
     </thead>
@@ -34,7 +34,7 @@
       </tr>
       {% endwith %}
       {% empty %}
-      <tr><td colspan="5" class="empty-row">No equity positions match the selected filters.</td></tr>
+      <tr><td colspan="5" class="empty-row">{% if query %}No equity positions match "{{ query }}".{% else %}No equity positions match the selected filters.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

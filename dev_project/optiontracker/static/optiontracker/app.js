@@ -83,6 +83,15 @@
       return;
     }
 
+    // Date Range menu: the Apply button (custom range) closes the menu;
+    // htmx handles the request itself.
+    var applyButton = event.target.closest(".range-apply");
+    if (applyButton) {
+      var applyMenu = applyButton.closest(".dropdown-menu");
+      if (applyMenu) applyMenu.hidden = true;
+      return;
+    }
+
     var dropdownToggle = event.target.closest(".dropdown-toggle");
     if (dropdownToggle) {
       var menu = document.getElementById(dropdownToggle.getAttribute("data-dropdown"));
@@ -105,6 +114,21 @@
         detail.hidden = !detail.hidden;
         row.classList.toggle("open", !detail.hidden);
       }
+    }
+  });
+
+  // Date Range menu is single-select: picking a window closes the menu;
+  // picking "Custom Date Range" reveals the date inputs + Apply instead.
+  document.addEventListener("change", function (event) {
+    var target = event.target;
+    if (!target.matches || !target.matches('.range-menu input[name="range"]')) return;
+    var menu = target.closest(".range-menu");
+    var custom = menu.querySelector(".range-custom");
+    if (target.value === "custom") {
+      if (custom) custom.hidden = false;
+    } else {
+      if (custom) custom.hidden = true;
+      menu.hidden = true;
     }
   });
 

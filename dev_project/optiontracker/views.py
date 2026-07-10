@@ -17,13 +17,19 @@ from django.shortcuts import render
 from dev_project.optiontracker import services
 from django_assets.trades import reports
 
+#: Date Range menu vocabulary (reference dropdown). "" clears the filter;
+#: "custom" reveals two date inputs + Apply in the menu.
 DATE_RANGES = [
-    ("all", "All time"),
-    ("30d", "Last 30 days"),
-    ("90d", "Last 90 days"),
-    ("ytd", "Year to date"),
-    ("1y", "Last year"),
+    ("", "Select date range"),
+    ("this_week", "This Week"),
+    ("last_week", "Last Week"),
+    ("this_month", "This Month"),
+    ("last_month", "Last Month"),
+    ("this_quarter", "This Quarter"),
+    ("ytd", "YTD"),
+    ("custom", "Custom Date Range"),
 ]
+RANGE_LABELS = dict(DATE_RANGES)
 
 BROKERS = [
     ("Robinhood", "RH", False),
@@ -47,17 +53,61 @@ POSITION_SORTS = {
 }
 
 
-def _range_start(code: str) -> datetime.date | None:
+def _parse_date(raw: str | None) -> datetime.date | None:
+    if not raw:
+        return None
+    try:
+        return datetime.date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _date_window(request: HttpRequest) -> "tuple[str, datetime.date | None, datetime.date | None]":
+    """Date Range menu choice -> (code, start, end). Pure calendar-window
+    arithmetic (presentation); the dates go to the library's start/end
+    params. Weeks run Sunday..Saturday like the reference calendar."""
+    code = request.GET.get("range", "")
+    if code not in RANGE_LABELS:
+        code = ""
     today = datetime.date.today()
-    if code == "30d":
-        return today - datetime.timedelta(days=30)
-    if code == "90d":
-        return today - datetime.timedelta(days=90)
+    week_start = today - datetime.timedelta(days=(today.weekday() + 1) % 7)
+    month_start = today.replace(day=1)
+    if code == "this_week":
+        return code, week_start, week_start + datetime.timedelta(days=6)
+    if code == "last_week":
+        return (
+            code,
+            week_start - datetime.timedelta(days=7),
+            week_start - datetime.timedelta(days=1),
+        )
+    if code == "this_month":
+        next_month = (month_start + datetime.timedelta(days=32)).replace(day=1)
+        return code, month_start, next_month - datetime.timedelta(days=1)
+    if code == "last_month":
+        end = month_start - datetime.timedelta(days=1)
+        return code, end.replace(day=1), end
+    if code == "this_quarter":
+        quarter_start = today.replace(month=today.month - (today.month - 1) % 3, day=1)
+        next_quarter = (quarter_start + datetime.timedelta(days=95)).replace(day=1)
+        return code, quarter_start, next_quarter - datetime.timedelta(days=1)
     if code == "ytd":
-        return today.replace(month=1, day=1)
-    if code == "1y":
-        return today - datetime.timedelta(days=365)
-    return None
+        return code, today.replace(month=1, day=1), today
+    if code == "custom":
+        return code, _parse_date(request.GET.get("start")), _parse_date(request.GET.get("end"))
+    return "", None, None
+
+
+def _range_context(request: HttpRequest, code: str) -> dict:
+    """Template context for the Date Range dropdown (button label + the
+    custom inputs' current values)."""
+    label = RANGE_LABELS.get(code, "")
+    return {
+        "range_code": code,
+        "range_label": label if code else "Date Range",
+        "date_ranges": DATE_RANGES,
+        "custom_start": request.GET.get("start", ""),
+        "custom_end": request.GET.get("end", ""),
+    }
 
 
 def _base_context(request: HttpRequest, nav: str) -> "tuple[object, dict]":
@@ -225,7 +275,7 @@ def equities(request: HttpRequest) -> HttpResponse:
 def analytics(request: HttpRequest) -> HttpResponse:
     user, context = _base_context(request, "analytics")
     selected = [s for s in request.GET.getlist("strategy") if s]
-    range_code = request.GET.get("range", "all")
+    range_code, start, end = _date_window(request)
     query = request.GET.get("q", "").strip()
     mode = "monthly" if request.GET.get("mode") == "monthly" else "weekly"
     chart = "bars" if request.GET.get("chart") == "bars" else "cumulative"
@@ -234,7 +284,8 @@ def analytics(request: HttpRequest) -> HttpResponse:
         user,
         strategies=selected or None,
         underlyings=[query] if query else None,
-        start=_range_start(range_code),
+        start=start,
+        end=end,
     )
     strategy_options = sorted(reports.strategy_performance(user).strategy_counts)
     today = datetime.date.today()
@@ -256,8 +307,7 @@ def analytics(request: HttpRequest) -> HttpResponse:
             "account_values": account_values,
             "strategy_options": strategy_options,
             "selected_strategies": selected,
-            "range_code": range_code,
-            "date_ranges": DATE_RANGES,
+            **_range_context(request, range_code),
             "query": query,
             "mode": mode,
             "chart": chart,
@@ -277,14 +327,14 @@ def pnl_flow_view(request: HttpRequest) -> HttpResponse:
     user, context = _base_context(request, "pnl_flow")
     query = request.GET.get("q", "").strip()
     selected = [s for s in request.GET.getlist("strategy") if s]
-    range_code = request.GET.get("range", "all")
-    start = _range_start(range_code)
+    range_code, start, end = _date_window(request)
 
     flow = reports.pnl_flow_summary(
         user,
         strategies=selected or None,
         underlyings=[query] if query else None,
         start=start,
+        end=end,
     )
     top10_applied = False
     if not query:
@@ -294,7 +344,7 @@ def pnl_flow_view(request: HttpRequest) -> HttpResponse:
         if len(ranked) > 10:
             top_codes = [instrument.code for instrument, _amount in ranked[:10]]
             flow = reports.pnl_flow_summary(
-                user, strategies=selected or None, underlyings=top_codes, start=start
+                user, strategies=selected or None, underlyings=top_codes, start=start, end=end
             )
             top10_applied = True
 
@@ -305,8 +355,7 @@ def pnl_flow_view(request: HttpRequest) -> HttpResponse:
             "query": query,
             "selected_strategies": selected,
             "strategy_options": sorted(reports.strategy_performance(user).strategy_counts),
-            "range_code": range_code,
-            "date_ranges": DATE_RANGES,
+            **_range_context(request, range_code),
         }
     )
     if request.headers.get("HX-Request"):
@@ -402,9 +451,8 @@ def history(request: HttpRequest) -> HttpResponse:
     user, context = _base_context(request, "history")
     query = request.GET.get("q", "").strip()
     selected = [s for s in request.GET.getlist("strategy") if s]
-    range_code = request.GET.get("range", "all")
     assigned_only = bool(request.GET.get("assigned"))
-    start = _range_start(range_code)
+    range_code, start, end = _date_window(request)
 
     all_rows = reports.closed_option_strategies(user)
     strategy_options = sorted({row.strategy for row in all_rows if row.strategy})
@@ -419,6 +467,8 @@ def history(request: HttpRequest) -> HttpResponse:
             ]
         if start:
             assignment_rows = [row for row in assignment_rows if row.assigned_on >= start]
+        if end:
+            assignment_rows = [row for row in assignment_rows if row.assigned_on <= end]
         context["assignments"] = assignment_rows
         context["total_assignments"] = len(assignment_rows)
         rows = []
@@ -431,6 +481,8 @@ def history(request: HttpRequest) -> HttpResponse:
             rows = [row for row in rows if row.strategy in selected]
         if start:
             rows = [row for row in rows if row.closed_on and row.closed_on >= start]
+        if end:
+            rows = [row for row in rows if row.closed_on and row.closed_on <= end]
 
         sort = request.GET.get("sort", "-trade_date")
         descending = sort.startswith("-")
@@ -454,12 +506,9 @@ def history(request: HttpRequest) -> HttpResponse:
                 "descending": is_active and descending,
             }
 
-    stats = reports.strategy_performance(
-        user,
-        strategies=selected or None,
-        underlyings=[query] if query else None,
-        start=start,
-    )
+    # Reference behavior: the totals above the filter row are GRAND totals
+    # (whole account), regardless of the active search/strategy/date filters.
+    stats = reports.strategy_performance(user)
     context.update(
         {
             "rows": rows,  # all rows on one page (reference has no pagination)
@@ -467,8 +516,7 @@ def history(request: HttpRequest) -> HttpResponse:
             "total_strategies": stats.wins + stats.losses,  # closure count, not money
             "strategy_options": strategy_options,
             "selected_strategies": selected,
-            "range_code": range_code,
-            "date_ranges": DATE_RANGES,
+            **_range_context(request, range_code),
             "query": query,
             "assigned_only": assigned_only,
             "sort_state": sort_state,

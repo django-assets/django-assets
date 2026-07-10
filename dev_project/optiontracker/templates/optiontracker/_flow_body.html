@@ -1,4 +1,7 @@
 {% load tracker_format tracker_charts %}
+{% if is_htmx %}
+{% include "optiontracker/_date_range_button.html" with range_btn_id="flow-range-btn" range_menu_id="flow-range-menu" range_oob=True %}
+{% endif %}
 <div id="flow-body">
   {% if flow.rows %}
   <div class="chart-card flow-card">

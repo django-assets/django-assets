@@ -1,0 +1,16 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch();
+const page = await browser.newContext({ viewport: { width: 1440, height: 900 } }).then(c => c.newPage());
+page.on('request', r => { if (r.url().includes('8642')) console.log('REQ', r.url()); });
+page.on('response', r => { if (r.url().includes('8642')) console.log('RESP', r.status(), r.url()); });
+page.on('pageerror', e => console.log('PAGEERROR', e.message));
+await page.goto('http://127.0.0.1:8642/tracker/', { waitUntil: 'networkidle' });
+console.log('htmx:', await page.evaluate(() => window.htmx?.version || 'MISSING'));
+const link = page.locator('th a:has-text("Expiration")').first();
+console.log('link count:', await page.locator('th a:has-text("Expiration")').count(), 'href:', await link.getAttribute('href'));
+await link.click();
+await page.waitForTimeout(30000);
+const n = ((await page.locator('body').innerText()).match(/\((\d+)d\)/g) || []).map(s => parseInt(s.match(/\d+/)[0],10));
+console.log('URL:', page.url());
+console.log('ordered asc?', n.every((v,i,a)=>i===0||a[i-1]<=v), n.slice(0,10).join(','));
+await browser.close();

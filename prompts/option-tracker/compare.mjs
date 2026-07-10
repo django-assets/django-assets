@@ -160,9 +160,10 @@ if (await condorOption.count()) {
   check('strategy filter → only iron condors', false, 'no Iron Condor option found in filter');
 }
 
-// sorting toggles
-await page.locator('th:has-text("EXPIRATION"), th a:has-text("EXPIRATION")').first().click().catch(() => {});
-await page.waitForTimeout(800);
+// sorting toggles — click the header's ANCHOR (the th itself is not the
+// htmx trigger) and give the swap time to settle.
+await page.locator('th.sortable a:has-text("Expiration")').first().click().catch(() => {});
+await page.waitForTimeout(1500);
 check('sort by expiration navigates/updates', true); // structural: no crash; ordering asserted below
 const dtes = (await bodyText()).match(/\((\d+)d\)/g) || [];
 const nums = dtes.map((d) => parseInt(d.match(/\d+/)[0], 10));

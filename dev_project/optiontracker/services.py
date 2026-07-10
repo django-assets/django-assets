@@ -14,13 +14,14 @@ _price_source: PriceSource | None = None
 def price_source() -> PriceSource:
     """Process-wide singleton, built LAZILY on first use: MarketData
     quotes behind a TTL cache so a page render costs at most one metered
-    fetch per instrument per 2 minutes. Token comes from
+    fetch per instrument per 5 minutes (history bars per 4 hours). Token
+    comes from
     $MARKETDATA_TOKEN — resolved when a tracker view first needs a
     price, never at import (the rest of the project must not require a
     vendor credential)."""
     global _price_source
     if _price_source is None:
-        _price_source = CachedPriceSource(MarketDataPriceSource(), ttl=120, history_ttl=3600)
+        _price_source = CachedPriceSource(MarketDataPriceSource(), ttl=300, history_ttl=14400)
     return _price_source
 
 

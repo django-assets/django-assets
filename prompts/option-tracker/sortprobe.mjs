@@ -1,0 +1,16 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch();
+const page = await browser.newContext({ viewport: { width: 1440, height: 900 } }).then(c => c.newPage());
+await page.goto('http://127.0.0.1:8642/tracker/', { waitUntil: 'networkidle' });
+const grab = async () => ((await page.locator('body').innerText()).match(/\((\d+)d\)/g) || []).map(s => parseInt(s.match(/\d+/)[0],10));
+await page.locator('th a:has-text("Expiration")').first().click();
+await page.waitForResponse(r => r.url().includes('sort=expiration'), { timeout: 15000 });
+await page.waitForTimeout(600);
+let n = await grab();
+console.log('asc?', n.every((v,i,a)=>i===0||a[i-1]<=v), n.slice(0,8).join(','));
+await page.locator('th a:has-text("Expiration")').first().click();
+await page.waitForResponse(r => r.url().includes('sort=-expiration'), { timeout: 15000 });
+await page.waitForTimeout(600);
+n = await grab();
+console.log('desc?', n.every((v,i,a)=>i===0||a[i-1]>=v), n.slice(0,8).join(','));
+await browser.close();

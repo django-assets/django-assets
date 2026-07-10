@@ -1,0 +1,25 @@
+import { chromium } from 'playwright';
+const OUT = '/tmp/claude-1001/-home-selden-django-assets-django-assets/da5d34ba-7dd5-44f4-95f1-43b45b540065/scratchpad';
+const browser = await chromium.launch();
+const page = await browser.newContext({ viewport: { width: 1440, height: 900 } }).then(c => c.newPage());
+page.on('console', m => console.log('CONSOLE:', m.type(), m.text().slice(0,200)));
+page.on('response', r => { if (r.url().includes('analytics')) console.log('RESP', r.status(), r.url()); });
+await page.goto('http://127.0.0.1:8642/tracker/analytics/', { waitUntil: 'networkidle' });
+console.log('goal inputs:', await page.locator('input[name=goal]').count());
+console.log('analytics-filters exists:', await page.locator('#analytics-filters').count());
+console.log('analytics-mode exists:', await page.locator('#analytics-mode').count());
+await page.locator('input[name=goal]').fill('500');
+await page.waitForTimeout(4000);
+console.log('URL after fill:', page.url());
+console.log('goal-line count:', await page.locator('.chart-row .chart-card').first().locator('line.goal-line').count());
+console.log('goal value now:', await page.locator('input[name=goal]').inputValue());
+await page.screenshot({ path: `${OUT}/goal-after-fill.png`, fullPage: true });
+// now flip switch
+await page.locator('.switch').click();
+await page.waitForTimeout(3000);
+console.log('URL after switch:', page.url());
+console.log('bars:', await page.locator('.chart-row .chart-card').first().locator('rect.bar').count());
+console.log('switch off:', await page.locator('.switch:not(.on)').count());
+console.log('goal-line in bars:', await page.locator('.chart-row .chart-card').first().locator('line.goal-line').count());
+await page.screenshot({ path: `${OUT}/after-switch.png`, fullPage: true });
+await browser.close();

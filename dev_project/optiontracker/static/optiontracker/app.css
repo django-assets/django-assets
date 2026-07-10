@@ -461,6 +461,41 @@ a:hover { color: var(--text); }
 .dropdown-check:hover { background: var(--card-3); }
 .dropdown-check input { accent-color: var(--accent); }
 
+/* Date Range menu (single-select; Custom reveals date inputs + Apply) */
+
+.range-menu { min-width: 190px; padding: 8px; }
+
+.range-item {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.range-item:hover { background: var(--card-3); }
+.range-item input { display: none; }
+.range-item:has(input:checked) { color: var(--accent); font-weight: 600; }
+.range-item.range-clear { color: var(--muted); font-size: 12px; }
+.range-item.range-clear:has(input:checked) { color: var(--muted); font-weight: 500; }
+.range-item.range-item-custom { border-top: 1px solid var(--border); border-radius: 0 0 8px 8px; margin-top: 4px; padding-top: 10px; }
+
+.range-custom { display: flex; flex-direction: column; gap: 8px; padding: 6px 10px 4px; }
+.range-custom[hidden] { display: none; }
+.range-custom input[type="date"] {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-3);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 8px;
+}
+.range-custom .range-apply { justify-content: center; padding: 7px 12px; }
+
+.range-toggle .range-btn-label { white-space: nowrap; }
+
 /* ---- data tables ---- */
 
 .table-wrap { overflow-x: auto; border-radius: 10px; }
@@ -488,6 +523,9 @@ a:hover { color: var(--text); }
 .data-table th:last-child { border-radius: 0 10px 10px 0; }
 
 .data-table th.num, .data-table td.num { text-align: right; }
+
+/* mixed-case sortable headers (reference: "Trade Date", "Realized PnL") */
+.data-table th.th-mixed { text-transform: none; letter-spacing: 0; font-size: 12.5px; }
 
 .data-table th.sortable a { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 .data-table th.sortable a:hover { color: var(--text); }
@@ -576,9 +614,11 @@ tr.open .row-chev { transform: rotate(90deg); }
 
 .roll-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 
-/* info dot (rolled PnL) */
+/* info dots: muted OUTLINE style everywhere; the solid blue fill is
+   reserved for the rolled-PnL row indicator (.info-dot-solid). */
 
 .info-dot {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -586,15 +626,65 @@ tr.open .row-chev { transform: rotate(90deg); }
   height: 14px;
   margin-left: 4px;
   border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  font-size: 9.5px;
-  font-weight: 700;
+  background: transparent;
+  border: 1px solid var(--muted);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
   font-style: italic;
   font-family: Georgia, serif;
   cursor: help;
   vertical-align: 1px;
+  flex: none;
 }
+
+.info-dot-solid {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* instant CSS tooltips (replace native title= delays) */
+
+.tip-host { position: relative; }
+
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  width: max-content;
+  max-width: 280px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #23272f;
+  border: 1px solid #343a44;
+  color: #e7eaf0;
+  font-size: 12px;
+  font-weight: 400;
+  font-style: normal;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+  text-align: left;
+  text-decoration: none;
+  white-space: normal;
+  line-height: 1.45;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  cursor: default;
+  z-index: 90;
+}
+
+.info-dot:hover > .tooltip,
+.tip-host:hover > .tooltip { display: block; }
+
+.tooltip a { color: #e7eaf0; text-decoration: underline; font-weight: 600; }
+
+/* header tooltips open DOWNWARD so the table-wrap scroll box does not
+   clip them above the table. */
+.data-table th .tooltip { bottom: auto; top: calc(100% + 8px); }
+th:last-child .tooltip, td:last-child .tooltip { left: auto; right: -6px; transform: none; }
 
 /* detail-panel actions + dialogs */
 
@@ -1053,9 +1143,42 @@ tr.open .row-chev { transform: rotate(90deg); }
 
 /* ---- responsive ---- */
 
+/* 1280-wide screens: tighten the positions table so every column
+   (including SHARE) fits without an inner horizontal scrollbar. */
+@media (max-width: 1366px) {
+  .positions-table th { padding: 10px 7px; font-size: 10px; letter-spacing: 0.03em; }
+  .positions-table td { padding: 11px 7px; font-size: 12.5px; }
+  .positions-table .sym-cell { gap: 6px; }
+  .positions-table .sym-avatar { width: 22px; height: 22px; }
+  .positions-table .share-btn { padding: 4px; }
+}
+
+/* narrow screens: the layout wraps cleanly — the sidebar collapses to a
+   top strip (nav items in a wrapping row) and the summary grid drops to
+   two columns; nothing forces a page-level horizontal scroll. */
 @media (max-width: 1100px) {
   .layout { flex-direction: column; }
-  .sidebar { position: static; width: 100%; flex: none; }
+  .sidebar {
+    position: static;
+    width: 100%;
+    flex: none;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+  .tutorial-btn { width: auto; }
+  .account-picker { display: flex; align-items: center; gap: 8px; }
+  .account-picker-label { margin-bottom: 0; }
+  .account-select { width: auto; }
+  .sidenav { flex-direction: row; flex-wrap: wrap; width: 100%; gap: 4px; }
+  .sidenav-item { padding: 9px 12px; font-size: 13px; }
+  .sidenav-item .chev { display: none; }
+  .sidenav-sub { display: none; }
   .summary-body { grid-template-columns: repeat(2, 1fr); }
   .analytics-grid, .chart-row { grid-template-columns: 1fr; }
+  .topnav { gap: 14px; padding: 0 16px; }
+  .topnav-links { gap: 0; }
+  .topnav-links a { padding: 0 9px; }
+  .footer { flex-wrap: wrap; }
 }
