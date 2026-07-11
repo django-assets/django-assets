@@ -1614,3 +1614,6 @@ dialog.app-dialog.tour-open {
 .positions-table[data-sort-col="7"] > thead > tr > th:nth-child(7), .positions-table[data-sort-col="7"] > tbody > tr.pos-row > td:nth-child(7) { background: rgba(245, 158, 11, 0.09); }
 
 .sidenav-subitem svg { width: 14px; height: 14px; color: var(--muted); flex: none; margin-right: 2px; vertical-align: -2px; }
+
+#equities-table .sym-text { flex-direction: row; gap: 4px; align-items: baseline; }
+#equities-table .sym-price { font-size: 14px; color: var(--text); }

@@ -9,6 +9,7 @@
         <th class="num">Market Value</th>
         <th class="num">
           <a class="metric-toggle tip-host" hx-get="{{ pnl_toggle_url }}" hx-target="#equities-table" hx-swap="outerHTML" hx-push-url="true" href="{{ pnl_toggle_url }}">{% if pnl_mode == 'usd' %}PnL ($){% else %}PnL (%){% endif %}<span class="tooltip">Switch between PnL (%) and PnL ($)</span></a>
+          <span class="info-dot">i<span class="tooltip">Profit or loss vs cost basis.</span></span>
         </th>
       </tr>
     </thead>

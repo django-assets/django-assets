@@ -283,9 +283,9 @@ def cumulative_profit_chart(
 @register.inclusion_tag("optiontracker/charts/line_chart.html")
 def cumulative_line_chart(daily_cumulative: list, account_values: list | None = None) -> dict:
     """Two report series on one time axis with DUAL y-axes (reference
-    behavior): the LEFT axis is scaled to account_value_series() and the
-    RIGHT axis to PerformanceStats.daily_cumulative, so both lines span
-    the plot. Tick labels are derived scale marks on both sides."""
+    behavior): the LEFT axis is scaled to PerformanceStats.daily_cumulative
+    (option profit) and the RIGHT axis to account_value_series(), so both
+    lines span the plot. Tick labels are derived scale marks on both sides."""
     width, height = 860.0, 300.0
     pad_left, pad_right, pad_top, pad_bottom = 64.0, 64.0, 16.0, 28.0
     plot_w = width - pad_left - pad_right
@@ -349,13 +349,15 @@ def cumulative_line_chart(daily_cumulative: list, account_values: list | None = 
     for i in range(tick_count):
         fraction = i / (tick_count - 1)
         y = pad_top + (1.0 - fraction) * plot_h
-        left_value = account_low + (account_high - account_low) * fraction
-        right_value = profit_low + (profit_high - profit_low) * fraction
+        # Reference axis assignment: LEFT = option cumulative profit,
+        # RIGHT = account value.
+        left_value = profit_low + (profit_high - profit_low) * fraction
+        right_value = account_low + (account_high - account_low) * fraction
         ticks.append(
             {
                 "y": y,
-                "left_label": _tick_label(left_value) if account_values else "",
-                "right_label": _tick_label(right_value) if daily_cumulative else "",
+                "left_label": _tick_label(left_value) if daily_cumulative else "",
+                "right_label": _tick_label(right_value) if account_values else "",
             }
         )
     x_tick_count = min(6, len(set(all_days)))
