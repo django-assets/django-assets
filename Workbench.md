@@ -304,9 +304,24 @@ domain logic in the app layer.
   premium_months (single-pass), classify_trade, assignments, equity_holdings,
   wheel history, OptionQuote intrinsic/extrinsic, and the assignment cash
   policy. All Decimal-pure, thin app enforced by scripts/check_app_thinness.py.
-- Next: grader round(s) continue until a fresh grader can't distinguish the
-  clone within the counting criteria (dataset/brand/logo/snapshot-metric and
-  perceptually-equivalent color nuance excluded).
+- Round 21 (fresh context): **BOTH BARS PASS — phase 2 signed off.** After
+  confirming all fixes in both themes against the live reference, both
+  regression suites (compare.mjs 106/106 + exercise4.mjs 52/52), thinness
+  re-verified with two exact number traces into trades/reports.py, and a
+  full screen-by-screen live-reference comparison (positions incl. expanded
+  greeks/rolls, wheel, equities, analytics incl. dual-axis, PnL flow,
+  calendar, history, broker, roll-finder dialog, TradingView panel,
+  responsive 1280/900, dark+light), the grader "could not distinguish the
+  clone from the reference within the counting criteria."
+
+## Phase 2 DONE (2026-07-10)
+
+Both DONE bars met by the fresh-context grader: (1) BEHAVIORAL PARITY —
+indistinguishable from the reference; (2) LIBRARY-BACKED & THIN — every
+on-screen value traces to a django_assets API, the app layer is arithmetic-
+free (scripts/check_app_thinness.py), and every gap was closed in the
+library with tests + ADRs (ADR-0040 reporting surface, ADR-0041
+OptionChainSource), not worked around. Phases 1 and 2 both complete.
 - OUTSTANDING (market hours): phase-1 RTH re-verification (realtime channel
   freshness) at/after 09:30 ET — capabilities honestly report realtime=False
   until confirmable, so no unverified claim is live meanwhile.

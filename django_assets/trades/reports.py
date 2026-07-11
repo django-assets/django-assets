@@ -723,13 +723,8 @@ def closed_option_strategies(user: Any) -> "list[ClosedStrategy]":
             touched = [iid for iid in event.positions if iid in metas]
             if not touched:
                 continue
-            single = touched[0] if len(touched) == 1 else None
-            per_contract: Decimal | None = None
-            if single is not None and event.positions[single] != 0:
-                meta = metas[single]
-                per_contract = meta.instrument.quantize_price(
-                    abs(event.cash) / abs(event.positions[single]) / meta.instrument.multiplier
-                )
+            # Per-leg prices come from _transaction_events/tx_prices above;
+            # the event walk only tracks positions, cash, fees, and status.
             option_cash = _option_event_cash(event, metas)
             if not seen_option_event:
                 opened_on = event.when.date()
