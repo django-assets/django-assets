@@ -1,0 +1,223 @@
+{% load tracker_format %}
+{% if is_htmx %}<span id="pos-count" hx-swap-oob="true">({{ count }})</span>{% endif %}
+<div id="positions-table" class="table-wrap">
+  <table class="data-table positions-table"{% if sorted_col_index %} data-sort-col="{{ sorted_col_index }}"{% endif %}>
+    <thead>
+      <tr>
+        <th class="sortable{% if sort_state.symbol.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.symbol.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.symbol.url }}">Symbol <span class="sort-arrow">{% if sort_state.symbol.active %}{% if sort_state.symbol.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
+        <th>Type (Contracts)</th>
+        <th class="sortable{% if sort_state.expiration.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.expiration.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.expiration.url }}">Expiration <span class="sort-arrow">{% if sort_state.expiration.active %}{% if sort_state.expiration.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
+        <th class="sortable num{% if sort_state.pnl.active %} sorted{% endif %}">
+          <a class="metric-toggle tip-host" hx-get="{{ pnl_toggle_url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ pnl_toggle_url }}">{% if pnl_mode == 'usd' %}PnL ($){% else %}PnL (%){% endif %}<span class="tooltip">Switch between PnL (%) and PnL ($)</span></a>
+          <a hx-get="{{ sort_state.pnl.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.pnl.url }}" aria-label="Sort by PnL"><span class="sort-arrow">{% if sort_state.pnl.active %}{% if sort_state.pnl.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
+        <th class="sortable num{% if sort_state.market_value.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.market_value.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.market_value.url }}">Market Value <span class="sort-arrow">{% if sort_state.market_value.active %}{% if sort_state.market_value.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+          <span class="info-dot">i<span class="tooltip">Cost to close the option legs at the current mid price.</span></span>
+        </th>
+        <th class="sortable num{% if sort_state.delta.active %} sorted{% endif %}">
+          <a class="metric-toggle tip-host" hx-get="{{ metric_toggle_url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ metric_toggle_url }}">{% if metric == 'extrinsic' %}Extrinsic ($){% else %}Delta (%){% endif %}<span class="tooltip">Switch between Delta (%) and Extrinsic ($)</span></a>
+          <a hx-get="{{ sort_state.delta.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.delta.url }}" aria-label="Sort by delta"><span class="sort-arrow">{% if sort_state.delta.active %}{% if sort_state.delta.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+          <span class="info-dot">i<span class="tooltip">Delta (%): the primary leg's probability-style delta. Extrinsic ($): time value remaining across the position's legs.</span></span>
+        </th>
+        <th class="sortable num{% if sort_state.moneyness.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.moneyness.url }}" hx-target="#positions-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.moneyness.url }}">Moneyness <span class="sort-arrow">{% if sort_state.moneyness.active %}{% if sort_state.moneyness.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
+        <th class="num">Share</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in entries %}
+      {% with row=entry.row %}
+      <tr class="pos-row expandable" tabindex="0">
+        <td class="sym-cell">
+          <svg class="row-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+          <span class="sym-avatar">{{ row.underlying.code|slice:":1" }}</span>
+          <span class="sym-text">
+            <a class="sym-link" href="https://www.tradingview.com/chart/?symbol={{ row.underlying.code|urlencode }}" target="_blank" rel="noopener" aria-label="Open {{ row.underlying.code }} on TradingView">{{ row.underlying.code }}</a>
+            {% if entry.underlying_price is not None %}<span class="sym-price">({{ entry.underlying_price|plain_number }})</span>{% endif %}
+          </span>
+        </td>
+        <td>{{ row.strategy|strategy_label }} ({{ row.contracts }})</td>
+        <td>
+          {% if row.expiration %}
+            {% with days=row.expiration|days_until %}
+            {{ row.expiration|date:"Y-m-d" }} <span class="{% if days <= 1 %}neg{% else %}muted{% endif %}">({{ days }}d)</span>
+            {% endwith %}
+          {% else %}&mdash;{% endif %}
+        </td>
+        <td class="num">
+          {% if pnl_mode == 'usd' %}
+            {% if row.rolls %}
+            <span class="{{ row.pnl_incl_rolls|sign_class }}">{{ row.pnl_incl_rolls|money }}</span>
+            <span class="info-dot info-dot-solid">i<span class="tooltip">PnL includes realized PnL from rolled selections. Expand the row to view details.</span></span>
+            {% else %}
+            <span class="{{ row.unrealized_pnl|sign_class }}">{{ row.unrealized_pnl|money }}</span>
+            {% endif %}
+          {% else %}
+            {% if row.rolls %}
+            <span class="{{ row.pnl_pct_incl_rolls|sign_class }}">{{ row.pnl_pct_incl_rolls|pct0 }}</span>
+            <span class="info-dot info-dot-solid">i<span class="tooltip">PnL includes realized PnL from rolled selections. Expand the row to view details.</span></span>
+            {% else %}
+            <span class="{{ row.pnl_pct|sign_class }}">{{ row.pnl_pct|pct0 }}</span>
+            {% endif %}
+          {% endif %}
+        </td>
+        <td class="num">{{ row.market_value|money }}</td>
+        <td class="num">
+          {% if metric == 'extrinsic' %}
+          <span class="{{ row.extrinsic_value|sign_class }}">{{ row.extrinsic_value|money }}</span>
+          {% else %}
+          {{ row.delta_pct|pct1 }}
+          {% endif %}
+        </td>
+        <td class="num">
+          {% if row.moneyness_pct is not None %}{{ row.moneyness_pct|pct0 }}{% else %}&mdash;{% endif %}
+          {% if row.moneyness %}<span class="{% if row.moneyness == 'ITM' %}neg{% else %}pos{% endif %}">({{ row.moneyness }})</span>{% endif %}
+        </td>
+        <td class="num">
+          <button type="button" class="icon-btn share-btn tip-host" aria-label="Share this position"
+                  data-dialog="share-dialog-{{ row.trade.pk }}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+            <span class="tooltip">Share position</span>
+          </button>
+          <dialog class="app-dialog share-dialog" id="share-dialog-{{ row.trade.pk }}">
+            <div class="dialog-head">
+              <h3>Share Position</h3>
+            </div>
+            <p class="share-subtitle">Download an image of this position to share on social media</p>
+            <div class="share-card-wrap">
+              <div class="share-card">
+                <div class="share-symbol">${{ row.underlying.code }}</div>
+                <div class="share-strategy">{{ row.strategy|strategy_label }}</div>
+                <div class="share-terms">{% for leg in entry.legs %}{{ leg.strike|strike_plain }}{% if not forloop.last %}/{% endif %}{% endfor %}{% if row.expiration %} Expiration {{ row.expiration|date:"Y-m-d" }}{% endif %}</div>
+                <div class="share-stats">
+                  <div class="share-stat">
+                    <div class="share-stat-label">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+                      Current PnL
+                    </div>
+                    {% if row.rolls %}
+                    <div class="share-stat-value share-pnl-value {{ row.pnl_pct_incl_rolls|sign_class }}">{{ row.pnl_incl_rolls|money }} ({{ row.pnl_pct_incl_rolls|pct0 }})</div>
+                    {% else %}
+                    <div class="share-stat-value share-pnl-value {{ row.pnl_pct|sign_class }}">{{ row.unrealized_pnl|money }} ({{ row.pnl_pct|pct0 }})</div>
+                    {% endif %}
+                  </div>
+                  <div class="share-stat">
+                    <div class="share-stat-label">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>
+                      AROI (init/now)
+                    </div>
+                    <div class="share-stat-value share-aroi-value">{{ row.aroi_initial|pct0 }}/{{ row.aroi_now|pct0 }}</div>
+                    <div class="share-stat-sub">Annualized Return</div>
+                  </div>
+                </div>
+                <div class="share-grid">
+                  <div class="share-cell"><div class="share-k">Open</div><div class="share-v">{{ row.opened_on|date:"Y-m-d" }}</div></div>
+                  <div class="share-cell"><div class="share-k">Contracts</div><div class="share-v">{{ row.contracts }}</div></div>
+                  <div class="share-cell"><div class="share-k">Initial Premium</div><div class="share-v">{{ row.initial_premium|money }}</div></div>
+                  <div class="share-cell"><div class="share-k">Delta</div><div class="share-v">{{ row.delta_pct|pct1 }}</div></div>
+                </div>
+                <div class="share-foot">Powered by OptionTracker demo</div>
+              </div>
+            </div>
+            <div class="dialog-actions">
+              <button type="button" class="btn dialog-close">Cancel</button>
+              <button type="button" class="btn btn-primary share-download" data-symbol="{{ row.underlying.code }}">Download Image</button>
+            </div>
+          </dialog>
+        </td>
+      </tr>
+      <tr class="detail-row" hidden>
+        <td colspan="8">
+          <div class="detail-panel">
+            <div class="detail-meta">
+              <span><span class="muted">Open Date:</span> {{ row.opened_on|date:"Y-m-d" }}</span>
+              {% if row.strategy|is_debit %}
+              <span><span class="muted">Cost Basis:</span> {{ row.initial_premium|money_abs }}</span>
+              {% else %}
+              <span><span class="muted">Initial Premium:</span> {{ row.initial_premium|money }}</span>
+              {% endif %}
+              {% if row.rolls %}
+              <span><span class="muted">Premium Incl. Roll:</span> {{ row.premium_incl_rolls|money }}</span>
+              {% endif %}
+              {% if row.aroi_initial is not None or row.aroi_now is not None %}
+              <span><span class="muted">AROI (init/now):</span> {{ row.aroi_initial|pct0 }}/{{ row.aroi_now|pct0 }} <span class="info-dot">i<span class="tooltip">Annualized return on the position's margin: opening premium at entry / current P&amp;L, annualized.</span></span></span>
+              {% endif %}
+            </div>
+            <div class="detail-actions">
+              <a class="btn tv-icon-btn" href="https://www.tradingview.com/chart/?symbol={{ row.underlying.code|urlencode }}" target="_blank" rel="noopener" aria-label="Open TradingView chart for {{ row.underlying.code }}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+              </a>
+              <button type="button" class="btn btn-primary roll-btn" data-dialog="roll-dialog-{{ row.trade.pk }}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/></svg>
+                {% if row.rolls %}Modify Roll{% else %}Roll Selection{% endif %}
+              </button>
+              <span class="info-dot">i<span class="tooltip">Roll this position: close the current legs and reopen at a different strike or expiration.</span></span>
+            </div>
+            <dialog class="app-dialog roll-finder-dialog" id="roll-dialog-{{ row.trade.pk }}"
+                    data-roll-url="{% url 'optiontracker:roll-finder' row.trade.pk %}">
+              <div class="roll-finder-body">
+                <div class="dialog-head">
+                  <h3>Roll Selection for {{ row.underlying.code }}</h3>
+                  <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+                </div>
+                <p class="muted">Loading roll candidates…</p>
+              </div>
+            </dialog>
+            <table class="legs-table">
+              <thead>
+                <tr><th>Side / Right</th><th class="num">Strike</th><th class="num">Price</th><th class="num">IV</th><th class="num">Delta</th><th class="num">Gamma</th><th class="num">Theta</th><th class="num">Vega</th></tr>
+              </thead>
+              <tbody>
+                {% for leg in entry.legs %}
+                <tr>
+                  <td>{{ leg.side|side_label }} {{ leg.right|right_label }}</td>
+                  <td class="num">{{ leg.strike|strike }}</td>
+                  <td class="num">{{ leg.quote.price|money }}</td>
+                  <td class="num">{{ leg.quote.iv|pct2 }}</td>
+                  <td class="num">{{ leg.quote.delta|greek }}</td>
+                  <td class="num">{{ leg.quote.gamma|greek }}</td>
+                  <td class="num">{{ leg.quote.theta|greek }}</td>
+                  <td class="num">{{ leg.quote.vega|greek }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% if row.rolls %}
+            <div class="roll-block">
+              <div class="roll-title">Roll Selections ({{ row.rolls|length }}):</div>
+              <table class="legs-table roll-table">
+                <thead>
+                  <tr><th>Open Date</th><th>Close Date</th><th class="num">Initial Premium</th><th class="num">Realized PnL</th></tr>
+                </thead>
+                <tbody>
+                  {% for roll in row.rolls %}
+                  <tr>
+                    <td>{{ roll.opened_on|date:"M j, Y" }}</td>
+                    <td>{{ roll.closed_on|date:"M j, Y" }}</td>
+                    <td class="num">{{ roll.initial_premium|money }}</td>
+                    <td class="num {{ roll.realized_pnl|sign_class }}">{{ roll.realized_pnl|money }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% endif %}
+            {% if row.unpriced %}
+            <div class="muted small">No live quote for: {% for inst in row.unpriced %}{{ inst.code }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endwith %}
+      {% empty %}
+      <tr><td colspan="8" class="empty-row">{% if query %}No live option positions match symbol "{{ query }}".{% else %}No live option positions match the selected filters.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

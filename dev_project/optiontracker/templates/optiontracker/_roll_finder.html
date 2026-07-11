@@ -1,0 +1,88 @@
+{% load tracker_format %}
+{# Roll Selection finder dialog body: links this OPEN position to PRIOR closed #}
+{# trades on the same underlying — every figure from reports.roll_link_candidates(). #}
+{# The "with selection" running totals are summed client-side from the rows' data #}
+{# attributes (presentation only; Save Selection is demo-inert). #}
+<div class="roll-finder-body loaded"
+     data-current-premium="{{ link.initial_premium|default_if_none:'' }}"
+     data-current-pnl="{{ link.current_pnl|default_if_none:'' }}">
+  {% if link %}
+  <div class="dialog-head roll-head">
+    <h3>Roll Selection for {{ link.underlying.code }} {{ leg.right|right_label|upper }} {{ leg.side|upper }} {{ link.strike|strike }}</h3>
+    <label class="roll-lookback muted">Lookback period:
+      <select name="lookback"
+              hx-get="{% url 'optiontracker:roll-finder' link.trade.pk %}"
+              hx-target="closest .roll-finder-body" hx-swap="outerHTML">
+        {% for days, label in lookbacks %}
+        <option value="{{ days }}"{% if link.lookback_days == days %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+  </div>
+  <div class="roll-current">
+    <div class="roll-current-title">Current Position</div>
+    <div class="roll-current-grid">
+      <span class="roll-current-strategy">{{ link.strategy|strategy_label }} ({{ link.contracts }})</span>
+      <span class="roll-stack">
+        <span><span class="muted">Opened</span> {{ link.opened_on|date:"M j, Y" }}</span>
+        <span><span class="muted">Expires</span> {{ link.expiration|date:"M j, Y" }}</span>
+      </span>
+      <span><span class="muted">Strike:</span> {{ link.strike|plain_number }}</span>
+      <span class="roll-stack">
+        <span><span class="muted">Initial Premium:</span> {{ link.initial_premium|money }}</span>
+        <span><span class="muted">PnL:</span> <span class="{{ link.current_pnl|sign_class }}">{{ link.current_pnl|money }}</span></span>
+      </span>
+    </div>
+  </div>
+  <div class="roll-totals">
+    <span>Total Premium with selection: <strong class="roll-total-premium">-</strong></span>
+    <span>Total PnL with selection: <strong class="roll-total-pnl">-</strong></span>
+  </div>
+  {% if link.candidates %}
+  <p class="roll-found">Found {{ link.candidates|length }} potential roll candidate{{ link.candidates|length|pluralize }}. Select one or more:</p>
+  <table class="legs-table roll-table roll-candidates-table">
+    <thead>
+      <tr>
+        <th class="roll-check-col"><input type="checkbox" class="roll-select-all" aria-label="Select all roll candidates"></th>
+        <th class="roll-expand-col"><span class="sr-only">EXPAND</span></th>
+        <th>Type (Contracts)</th>
+        <th>Strike/<br>Expiry</th>
+        <th>Trade Date</th>
+        <th class="num">Initial Premium</th>
+        <th class="num">Realized PnL</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for candidate in link.candidates %}
+      <tr class="roll-candidate" tabindex="0" role="checkbox" aria-checked="false"
+          data-premium="{{ candidate.initial_premium }}" data-pnl="{{ candidate.realized_pnl }}">
+        <td class="roll-check-cell"><input type="checkbox" tabindex="-1" aria-hidden="true"></td>
+        <td class="roll-expand-cell"></td>
+        <td>{{ candidate.strategy|strategy_label }} ({{ candidate.contracts }})</td>
+        <td>{{ candidate.legs.0.strike|plain_number }}/ {{ candidate.expiration|date:"M j, Y" }}</td>
+        <td>{{ candidate.opened_on|date:"m/d/Y" }}-{{ candidate.closed_on|date:"m/d/Y" }}</td>
+        <td class="num">{{ candidate.initial_premium|money }}</td>
+        <td class="num {{ candidate.realized_pnl|sign_class }}">{{ candidate.realized_pnl|money }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No roll candidates found for this position in the last {{ link.lookback_days }} days. Historical trades have up to 24 hours delay before appearing here.</p>
+  {% endif %}
+  <div class="dialog-actions roll-foot">
+    <button type="button" class="btn dialog-close">Cancel</button>
+    <button type="button" class="btn btn-primary roll-save dialog-close">Save Selection</button>
+  </div>
+  {% else %}
+  <div class="dialog-head">
+    <h3>Roll Selection</h3>
+    <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+  </div>
+  <p class="muted">Roll candidates unavailable — this trade holds no live option position.</p>
+  <div class="dialog-actions">
+    <button type="button" class="btn dialog-close">Close</button>
+  </div>
+  {% endif %}
+</div>

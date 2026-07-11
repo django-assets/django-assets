@@ -1,0 +1,45 @@
+{% extends "optiontracker/base.html" %}
+{% load tracker_format %}
+{% block title %}PnL Flow — OptionTracker{% endblock %}
+{% block content %}
+<section class="card page-card">
+  <div class="page-head">
+    <h1>PnL Flow <span class="badge-demo">Demo data</span></h1>
+    <p class="page-desc">Track options PnL flow by strategy, symbol, call/put, and date. The chart shows the top 10 symbols by default; use filters to view more. Only finalized trades are included.</p>
+  </div>
+
+  <form id="flow-filters" class="filter-row" autocomplete="off" onsubmit="return false">
+    <label class="search-box">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="search" name="q" value="{{ query }}" placeholder="Search symbols..."
+             hx-get="{% url 'optiontracker:pnl-flow' %}"
+             hx-trigger="input changed delay:300ms, search"
+             hx-target="#flow-body" hx-swap="outerHTML"
+             hx-include="#flow-filters" hx-push-url="true">
+    </label>
+    <div class="dropdown">
+      <button type="button" class="btn dropdown-toggle" data-dropdown="flow-strategy-menu">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></svg>
+        Strategy
+      </button>
+      <div class="dropdown-menu" id="flow-strategy-menu" hidden>
+        <div class="dropdown-title">Filter by strategy</div>
+        {% for slug in strategy_options %}
+        <label class="dropdown-check">
+          <input type="checkbox" name="strategy" value="{{ slug }}"
+                 {% if slug in selected_strategies %}checked{% endif %}
+                 hx-get="{% url 'optiontracker:pnl-flow' %}"
+                 hx-trigger="change"
+                 hx-target="#flow-body" hx-swap="outerHTML"
+                 hx-include="#flow-filters" hx-push-url="true">
+          {{ slug|strategy_label }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% include "optiontracker/_date_range_menu.html" with range_btn_id="flow-range-btn" range_menu_id="flow-range-menu" range_view="optiontracker:pnl-flow" range_target="#flow-body" range_form="#flow-filters" %}
+  </form>
+
+  {% include "optiontracker/_flow_body.html" %}
+</section>
+{% endblock %}

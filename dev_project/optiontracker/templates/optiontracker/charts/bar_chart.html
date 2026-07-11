@@ -1,0 +1,21 @@
+{% load tracker_format %}
+{# Chart include — ALLOWED arithmetic zone (pixel geometry from tracker_charts). #}
+<div class="chart-scroll">
+  <svg class="chart" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="Profit bar chart">
+    {% for tick in ticks %}
+    <line class="gridline" x1="{{ pad_left }}" x2="{{ plot_right }}" y1="{{ tick.y }}" y2="{{ tick.y }}"/>
+    <text class="tick-label" x="{{ tick_x }}" y="{{ tick.y }}" text-anchor="end" dominant-baseline="middle">{{ tick.label }}</text>
+    {% endfor %}
+    <line class="axis-zero" x1="{{ pad_left }}" x2="{{ plot_right }}" y1="{{ zero_y }}" y2="{{ zero_y }}"/>
+    {% for bar in bars %}
+    <rect class="bar {% if bar.negative %}bar-neg{% else %}bar-pos{% endif %}" x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.w }}" height="{{ bar.h }}" rx="3">
+      <title>{{ bar.amount|money }}</title>
+    </rect>
+    {% if bar.label %}<text class="tick-label" x="{{ bar.label_x }}" y="{{ label_y }}" text-anchor="middle">{{ bar.label }}</text>{% endif %}
+    {% endfor %}
+    {% if goal_y is not None %}
+    <line class="goal-line" x1="{{ pad_left }}" x2="{{ plot_right }}" y1="{{ goal_y }}" y2="{{ goal_y }}"/>
+    <text class="tick-label goal-label" x="{{ plot_right }}" y="{{ goal_y }}" dy="-6" text-anchor="end">Goal {{ goal_label }}</text>
+    {% endif %}
+  </svg>
+</div>

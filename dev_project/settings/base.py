@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django_assets",
     "dev_project.hostapp",
+    "dev_project.optiontracker",
 ]
 
 MIDDLEWARE = [

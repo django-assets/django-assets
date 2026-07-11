@@ -44,6 +44,8 @@ class FakeVendor:
         stock_prices=None,
         option_series=None,
         option_live=None,
+        expirations=None,
+        chains=None,
         holidays=(),
         calendar_start=datetime.date(2020, 1, 1),
         calendar_end=datetime.date(2027, 12, 31),
@@ -55,6 +57,8 @@ class FakeVendor:
         self.stock_prices = stock_prices or {}
         self.option_series = option_series or {}
         self.option_live = option_live or {}
+        self.expirations = expirations or {}  # underlying -> [iso dates]
+        self.chains = chains or {}  # (underlying, iso date) -> list of contract dicts
         self.holidays = set(holidays)
         self.calendar_start = calendar_start
         self.calendar_end = calendar_end
@@ -204,6 +208,13 @@ class FakeVendor:
                 },
             )
 
+        if path.startswith("/v1/options/expirations/"):
+            symbol = path.strip("/").split("/")[-1]
+            exps = self.expirations.get(symbol)
+            if exps is None:
+                return self._no_data()
+            return self._respond(203, {"s": "ok", "expirations": exps, "updated": 1})
+
         if path.startswith("/v1/options/quotes/"):
             symbol = path.strip("/").split("/")[-1]
             series = self.option_series.get(symbol)
@@ -228,8 +239,30 @@ class FakeVendor:
                 return self._no_data()
             return self._respond(203, self._option_body([live]))
 
-        if path == "/v1/options/chain/" or path.startswith("/v1/options/chain/"):
-            return self._no_data()
+        if path.startswith("/v1/options/chain/"):
+            symbol = path.strip("/").split("/")[-1]
+            expiration = params.get("expiration")
+            rows = self.chains.get((symbol, expiration))
+            if rows is None:
+                return self._no_data()
+            side = params.get("side")
+            rows = [r for r in rows if side is None or r["side"] == side]
+            body = {
+                "s": "ok",
+                "optionSymbol": [r["optionSymbol"] for r in rows],
+                "expiration": [session_midnight(datetime.date.fromisoformat(expiration))]
+                * len(rows),
+                "side": [r["side"] for r in rows],
+                "strike": [Decimal(r["strike"]) for r in rows],
+                "bid": [Decimal(r["mark"]) for r in rows],
+                "ask": [Decimal(r["mark"]) for r in rows],
+                "mid": [Decimal(r["mark"]) for r in rows],
+                "last": [Decimal(r["mark"]) for r in rows],
+                "delta": [Decimal(r["delta"]) for r in rows],
+                "iv": [Decimal("0.30")] * len(rows),
+                "updated": [1] * len(rows),
+            }
+            return self._respond(203, body)
 
         return self._respond(500, {"s": "error", "errmsg": f"unrouted {path}"})
 
@@ -248,6 +281,8 @@ class FakeVendor:
             "underlyingPrice",
             "openInterest",
             "volume",
+            "intrinsicValue",
+            "extrinsicValue",
         )
         body: dict = {"s": "ok", "updated": [r["updated"] for r in rows]}
         for key in keys:

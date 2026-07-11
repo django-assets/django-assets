@@ -1,0 +1,89 @@
+{% load tracker_format %}
+<div id="wheel-table" class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Symbol</th>
+        <th class="num">Shares</th>
+        <th class="num">Cost Basis <span class="info-dot">i<span class="tooltip">Average price paid per share, before option premiums.</span></span></th>
+        <th class="num">Adjusted Cost <span class="info-dot">i<span class="tooltip">Cost basis reduced by the option premiums collected on these shares — the true cost after the wheel.</span></span></th>
+        <th class="num">Market Value</th>
+        <th class="num">
+          <a class="metric-toggle tip-host" hx-get="{{ pnl_toggle_url }}" hx-target="#wheel-table" hx-swap="outerHTML" hx-push-url="true" href="{{ pnl_toggle_url }}">{% if pnl_mode == 'usd' %}PnL ($){% else %}PnL (%){% endif %}<span class="tooltip">Switch between PnL (%) and PnL ($)</span></a>
+          <span class="info-dot">i<span class="tooltip">Profit or loss vs the adjusted cost basis.</span></span>
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in entries %}
+      {% with campaign=entry.campaign %}
+      <tr class="pos-row expandable" tabindex="0">
+        <td class="sym-cell">
+          <svg class="row-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+          <span class="sym-avatar">{{ campaign.underlying.code|slice:":1" }}</span>
+          <span class="sym-text">
+            <a class="sym-link" href="https://www.tradingview.com/chart/?symbol={{ campaign.underlying.code|urlencode }}" target="_blank" rel="noopener">{{ campaign.underlying.code }}</a>
+            {% if entry.quote %}<span class="sym-price">({{ entry.quote.price|money }})</span>{% endif %}
+          </span>
+        </td>
+        <td class="num">{{ campaign.shares|floatformat:"0" }}</td>
+        <td class="num">{{ campaign.cost_basis|money }}</td>
+        <td class="num">{{ campaign.adjusted_cost|money }}{% if campaign.adjusted_cost_pct is not None %} <span class="{{ campaign.adjusted_cost_pct|inverse_sign_class }}">({{ campaign.adjusted_cost_pct|pct0 }})</span>{% endif %}</td>
+        <td class="num">{{ campaign.market_value|money }}</td>
+        {% if pnl_mode == 'usd' %}
+        <td class="num {{ campaign.pnl|sign_class }}">{{ campaign.pnl|money_signed }}</td>
+        {% else %}
+        <td class="num {{ campaign.pnl_pct|sign_class }}">{{ campaign.pnl_pct|pct2_signed }}</td>
+        {% endif %}
+      </tr>
+      <tr class="detail-row" hidden>
+        <td colspan="6">
+          <div class="detail-panel">
+            <div class="detail-meta wheel-detail-head">
+              <span><span class="muted">Total Premium:</span> <strong>{{ campaign.total_premium|money }}</strong> <span class="info-dot">i<span class="tooltip">Total option premium collected across this campaign's option trades.</span></span></span>
+              <button type="button" class="btn btn-primary customize-btn" data-dialog="customize-dialog-{{ campaign.trade.pk }}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+                Customize
+              </button>
+              <span class="info-dot">i<span class="tooltip">Choose which option trades count toward this campaign's adjusted cost.</span></span>
+            </div>
+            <dialog class="app-dialog" id="customize-dialog-{{ campaign.trade.pk }}">
+              <div class="dialog-head">
+                <h3>Customize — {{ campaign.underlying.code }}</h3>
+                <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+              </div>
+              <p>Choose which option trades count toward this campaign's adjusted cost.</p>
+              <p class="muted small">This is a demo environment running on seeded data — campaign settings cannot be changed here.</p>
+            </dialog>
+            {% if campaign.history %}
+            <table class="legs-table">
+              <thead>
+                <tr><th>Type</th><th>Strike/Purchase Price</th><th>Contracts/Shares</th><th>Open Date</th><th>Close Date</th><th>Initial Premium/Amount</th><th>Realized PnL</th></tr>
+              </thead>
+              <tbody>
+                {% for item in campaign.history %}
+                <tr>
+                  <td>{{ item.right|wheel_type_label }}</td>
+                  <td>{{ item.strike|strike }}</td>
+                  <td>{{ item.contracts|floatformat:"0" }}{% if item.status == 'expired' or item.status == 'assigned' %} {{ item.status|upper }}{% endif %}</td>
+                  <td>{{ item.opened_on|date:"Y-m-d" }}</td>
+                  <td>{% if item.closed_on %}{{ item.closed_on|date:"Y-m-d" }}{% else %}&mdash;{% endif %}</td>
+                  <td>{{ item.initial_premium|money }}</td>
+                  <td class="{{ item.realized_pnl|sign_class }}">{% if item.realized_pnl is None %}&mdash;{% else %}{{ item.realized_pnl|money }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div class="muted small">No option trades on this campaign yet.</div>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endwith %}
+      {% empty %}
+      <tr><td colspan="6" class="empty-row">{% if query %}No equity positions match "{{ query }}".{% else %}No equity positions match the selected filters.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

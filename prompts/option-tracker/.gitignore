@@ -1,0 +1,6 @@
+# Reference-app creds (also matched by the repo-root .gitignore) — never commit.
+.env
+
+# Local Playwright resolution shim and generated comparison screenshots.
+node_modules/
+*.png

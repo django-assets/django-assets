@@ -1,0 +1,43 @@
+{% extends "optiontracker/base.html" %}
+{% load tracker_format %}
+{% block title %}Wheel Strategy — OptionTracker{% endblock %}
+{% block content %}
+<section class="card page-card">
+  <div class="page-head">
+    <h1>Wheel Strategy Campaigns <span class="badge-demo">Demo data</span></h1>
+    <p class="page-desc">View your active Wheel strategy campaigns. Only shares participating in a Wheel strategy are shown. See more details <a class="desc-link" href="#">here</a>.</p>
+  </div>
+
+  <div class="wheel-totals">
+    Total PnL: <strong class="{{ total_pnl|sign_class }}">{{ total_pnl|money_signed }}</strong>
+  </div>
+
+  <form id="wheel-filters" class="filter-row" autocomplete="off" onsubmit="return false">
+    <label class="search-box">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="search" name="q" value="{{ query }}" placeholder="Search by symbol"
+             hx-get="{% url 'optiontracker:wheel' %}"
+             hx-trigger="input changed delay:300ms, search"
+             hx-target="#wheel-table" hx-swap="outerHTML"
+             hx-include="#wheel-filters" hx-push-url="true">
+    </label>
+    <a class="btn" href="https://www.tradingview.com/" target="_blank" rel="noopener">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+      TradingView
+    </a>
+    <span class="info-dot">i<span class="tooltip">Open an embedded TradingView chart panel for your symbols.</span></span>
+  </form>
+
+  {% include "optiontracker/_wheel_table.html" %}
+
+  <button type="button" class="wheel-add-btn" data-dialog="wheel-add-dialog">+ Add new wheel position</button>
+  <dialog class="app-dialog" id="wheel-add-dialog">
+    <div class="dialog-head">
+      <h3>Add new wheel position</h3>
+      <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+    </div>
+    <p>Connect a broker to add positions.</p>
+    <p class="muted small">This is a demo environment running on seeded data — positions cannot be added here.</p>
+  </dialog>
+</section>
+{% endblock %}

@@ -1,0 +1,86 @@
+{% load tracker_format tracker_charts %}
+{% if is_htmx %}
+{% include "optiontracker/_date_range_button.html" with range_btn_id="analytics-range-btn" range_menu_id="analytics-range-menu" range_oob=True %}
+{% endif %}
+<div id="analytics-body">
+  <div class="analytics-grid">
+    <div class="stat-cards">
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-blue">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        </div>
+        <div class="stat-label stat-label-blue">Total Profit <span class="info-dot">i<span class="tooltip">Net realized profit across all finalized trades, after fees.</span></span></div>
+        <div class="stat-value">{{ stats.total_profit|money }}</div>
+        <div class="stat-sub">Fees paid: {{ stats.fees|money }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-amber">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+        </div>
+        <div class="stat-label stat-label-amber">Win Ratio <span class="info-dot">i<span class="tooltip">Share of finalized trades that closed for a net profit.</span></span></div>
+        <div class="stat-value">{{ stats.win_ratio|pct0 }}</div>
+        <div class="stat-sub">{{ stats.wins }} wins and {{ stats.losses }} losses</div>
+        <dl class="stat-lines">
+          <div><dt>Avg win</dt><dd>{{ stats.average_win|money }}</dd></div>
+          <div><dt>Avg loss</dt><dd>{{ stats.average_loss|money }}</dd></div>
+          <div><dt>Highest win</dt><dd>{{ stats.largest_win|money }}</dd></div>
+          <div><dt>Largest loss</dt><dd>{{ stats.largest_loss|money }}</dd></div>
+        </dl>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>Strategies Count</h3>
+      {% strategy_donut stats.strategy_counts %}
+    </div>
+  </div>
+
+  <div class="chart-row">
+    <div class="chart-card">
+      <div class="chart-card-head">
+        <h3>Cumulative Profits <span class="info-dot">i<span class="tooltip">Running total of realized profit from closed strategies. Flip the switch to see per-period bars instead.</span></span></h3>
+        <div class="chart-controls">
+          <a class="switch {% if chart == 'cumulative' %}on{% endif %}" role="switch" aria-checked="{% if chart == 'cumulative' %}true{% else %}false{% endif %}"
+             aria-label="Toggle cumulative line"
+             href="{{ chart_toggle_url }}" hx-get="{{ chart_toggle_url }}"
+             hx-target="#analytics-body" hx-swap="outerHTML" hx-push-url="true"><span class="switch-knob"></span></a>
+          <div class="toggle-pill">
+            <a class="{% if mode != 'weekly' %}on{% endif %}" href="{{ mode_state.monthly }}"
+               hx-get="{{ mode_state.monthly }}" hx-target="#analytics-body" hx-swap="outerHTML" hx-push-url="true">Monthly</a>
+            <a class="{% if mode == 'weekly' %}on{% endif %}" href="{{ mode_state.weekly }}"
+               hx-get="{{ mode_state.weekly }}" hx-target="#analytics-body" hx-swap="outerHTML" hx-push-url="true">Weekly</a>
+          </div>
+        </div>
+      </div>
+      <form id="analytics-mode" autocomplete="off" onsubmit="return false">
+        <input type="hidden" name="mode" value="{{ mode }}">
+        <input type="hidden" name="chart" value="{{ chart }}">
+        <label class="goal-field">{% if mode == 'weekly' %}Weekly goal{% else %}Monthly goal{% endif %}
+          <span class="goal-input">$
+            <input type="number" name="goal" value="{{ goal }}" min="0" step="100" placeholder="0"
+                   hx-get="{% url 'optiontracker:analytics' %}"
+                   hx-trigger="input changed delay:500ms"
+                   hx-target="#analytics-body" hx-swap="outerHTML"
+                   hx-include="#analytics-filters,#analytics-mode" hx-push-url="true">
+          </span>
+        </label>
+      </form>
+      {% if chart == 'cumulative' %}
+        {% cumulative_profit_chart stats.daily_cumulative mode=mode goal=goal %}
+      {% elif mode == 'weekly' %}
+        {% profit_bar_chart stats.weekly_profit mode='weekly' goal=goal %}
+      {% else %}
+        {% profit_bar_chart stats.monthly_profit mode='monthly' goal=goal %}
+      {% endif %}
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-head">
+        <h3>Option Profit vs Account Value <span class="info-dot">i<span class="tooltip">Green: cumulative option profit (left axis). Blue: total account value (right axis).</span></span></h3>
+        <div class="legend">
+          <span class="legend-dot legend-green"></span>Option cumulative profit
+          <span class="legend-dot legend-accent"></span>Account value
+        </div>
+      </div>
+      {% cumulative_line_chart stats.daily_cumulative account_values %}
+    </div>
+  </div>
+</div>

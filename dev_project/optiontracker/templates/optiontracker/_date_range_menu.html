@@ -1,0 +1,32 @@
+{% comment %}Date Range control (reference pattern): a button + styled
+dropdown menu. Single-select radios drive htmx re-render; "Custom Date
+Range" reveals two date inputs + Apply. Callers pass range_btn_id,
+range_menu_id, range_view, range_target and range_form (the hx-include
+selector).{% endcomment %}
+<div class="dropdown">
+  {% include "optiontracker/_date_range_button.html" %}
+  <div class="dropdown-menu range-menu" id="{{ range_menu_id }}" hidden>
+    {% for code, label in date_ranges %}
+    {% if code == "custom" %}
+    <label class="range-item range-item-custom{% if range_code == 'custom' %} selected{% endif %}">
+      <input type="radio" name="range" value="custom" {% if range_code == "custom" %}checked{% endif %}>
+      {{ label }}
+    </label>
+    <div class="range-custom" {% if range_code != "custom" %}hidden{% endif %}>
+      <input type="date" name="start" value="{{ custom_start }}" aria-label="Start date">
+      <input type="date" name="end" value="{{ custom_end }}" aria-label="End date">
+      <button type="button" class="btn btn-primary range-apply"
+              hx-get="{% url range_view %}" hx-target="{{ range_target }}" hx-swap="outerHTML"
+              hx-include="{{ range_form }}" hx-push-url="true">Apply</button>
+    </div>
+    {% else %}
+    <label class="range-item{% if not code %} range-clear{% endif %}{% if code == range_code %} selected{% endif %}">
+      <input type="radio" name="range" value="{{ code }}" {% if code == range_code %}checked{% endif %}
+             hx-get="{% url range_view %}" hx-trigger="change" hx-target="{{ range_target }}" hx-swap="outerHTML"
+             hx-include="{{ range_form }}" hx-push-url="true">
+      {{ label }}
+    </label>
+    {% endif %}
+    {% endfor %}
+  </div>
+</div>

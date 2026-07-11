@@ -1,0 +1,35 @@
+{% extends "optiontracker/base.html" %}
+{% load tracker_format %}
+{% block title %}Calendar — OptionTracker{% endblock %}
+{% block content %}
+<section class="card page-card">
+  <div class="page-head">
+    <h1>Calendar <span class="info-dot">i<span class="tooltip">Net option premium collected, organized by date.</span></span> <span class="badge-demo">Demo data</span></h1>
+    <p class="page-desc">Premium paychecks organized by date to track your option income over time</p>
+  </div>
+
+  <form id="calendar-filters" class="filter-row" autocomplete="off" onsubmit="return false">
+    <label class="search-box">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="search" name="q" value="{{ query }}" placeholder="Search symbols..."
+             hx-get="{% url 'optiontracker:calendar' %}"
+             hx-trigger="input changed delay:300ms, search"
+             hx-target="#calendar-body" hx-swap="outerHTML"
+             hx-include="#calendar-filters,#calendar-view-form" hx-push-url="true">
+    </label>
+  </form>
+
+  {% include "optiontracker/_calendar_body.html" %}
+
+  {# Month-detail dialog: body HTMX-loaded from the clicked month cell's URL (figures from reports.month_detail). #}
+  <dialog class="app-dialog month-detail-dialog" id="month-detail-dialog">
+    <div class="month-detail-body">
+      <div class="dialog-head">
+        <h3>Month Details</h3>
+        <button type="button" class="icon-btn dialog-close" aria-label="Close dialog">✕</button>
+      </div>
+      <p class="muted">Loading month details…</p>
+    </div>
+  </dialog>
+</section>
+{% endblock %}

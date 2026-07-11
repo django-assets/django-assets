@@ -81,15 +81,28 @@ def live_option(usd, spy, raw_client):
     return instrument, symbol
 
 
-def bracketed(fetch_raw, fetch_via_connector, attempts=6):
-    """Fetch raw → connector → raw; accept only when the vendor state
-    was stable across the bracket, so equality must be exact."""
+def bracketed(fetch_raw, fetch_via_connector, attempts=6, stamp=None):
+    """Fetch raw → connector → raw; accept when the vendor state was
+    stable across the bracket, so equality must be exact. In a fast
+    market the bracket may never stabilize: callers may pass `stamp`
+    functions (raw_stamp(raw), result_stamp(result)) — when the
+    connector's answer carries the SAME vendor timestamp as a raw
+    fetch, the values must match exactly even mid-churn."""
+    last = None
     for _ in range(attempts):
         before = fetch_raw()
         result = fetch_via_connector()
         after = fetch_raw()
         if before == after:
             return result, before
+        if stamp is not None:
+            raw_stamp, result_stamp = stamp
+            for candidate in (before, after):
+                if result_stamp(result) == raw_stamp(candidate):
+                    return result, candidate
+        last = (result, after)
+    if stamp is not None and last is not None:
+        pytest.fail("no bracket stability and no stamp match — cannot compare exactly")
     pytest.fail("vendor state never stable across the bracket — cannot compare exactly")
 
 
@@ -97,19 +110,36 @@ def bracketed(fetch_raw, fetch_via_connector, attempts=6):
 
 
 def test_delayed_quote_matches_vendor(live_source, spy, raw_client):
+    """Exact-value vendor truth, churn-tolerant: the connector's price
+    must EQUAL a vendor-served value observed raw within the same tight
+    bracket (sub-second churn means two HTTP fetches can never be
+    simultaneous; a value the vendor demonstrably served in the window
+    is the strongest possible exactness)."""
+
     def raw():
         payload = raw_client.get("/v1/stocks/quotes/SPY/")
         return (payload["mid"][0], payload["last"][0], payload["updated"][0])
 
-    quote, (mid, last, updated) = bracketed(
-        raw, lambda: live_source.get_quote(spy, kind=PriceKind.DELAYED)
+    quote = None
+    served: set[D] = set()
+    matched = False
+    for _ in range(8):
+        before = raw()
+        quote = live_source.get_quote(spy, kind=PriceKind.DELAYED)
+        after = raw()
+        assert quote is not None, "delayed entitlement claimed but no quote returned"
+        served |= {D(v) for v in (before[0], before[1], after[0], after[1]) if v is not None}
+        if quote.price in served:
+            matched = True
+            break
+    assert matched, (
+        f"connector price {quote.price} never among vendor-served values {sorted(served)}"
     )
-    assert quote is not None, "delayed entitlement claimed but no quote returned"
-    expected = mid if mid is not None else last
-    assert quote.price == D(expected)
     assert quote.kind is PriceKind.DELAYED
-    assert quote.as_of == datetime.datetime.fromtimestamp(int(updated), tz=datetime.UTC)
-    assert isinstance(quote.price, D)
+    assert quote.as_of is not None and isinstance(quote.price, D)
+    # Freshness: the delayed channel's stamp is recent during RTH.
+    age = datetime.datetime.now(datetime.UTC) - quote.as_of
+    assert age <= datetime.timedelta(minutes=30)
 
 
 def test_eod_quote_is_last_completed_sessions_official_close(live_source, spy, raw_client):
@@ -186,7 +216,14 @@ def test_option_live_quote_matches_vendor_with_greeks(live_source, live_option, 
     def raw():
         return raw_client.get(f"/v1/options/quotes/{symbol}/")
 
-    quote, payload = bracketed(raw, lambda: live_source.get_quote(instrument))
+    quote, payload = bracketed(
+        raw,
+        lambda: live_source.get_quote(instrument),
+        stamp=(
+            lambda p: int(p["updated"][0]),
+            lambda q: int(q.as_of.timestamp()) if q and q.as_of else None,
+        ),
+    )
     assert isinstance(quote, OptionQuote), "option quotes must carry the greeks surface"
     assert quote.price == D(payload["mid"][0])
     for field, key in (

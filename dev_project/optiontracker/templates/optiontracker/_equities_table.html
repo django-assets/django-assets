@@ -1,0 +1,42 @@
+{% load tracker_format %}
+<div id="equities-table" class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Symbol</th>
+        <th class="num">Shares</th>
+        <th class="num">Cost Basis <span class="info-dot">i<span class="tooltip">Average price paid per share (assignment strike cash counts as basis).</span></span></th>
+        <th class="num">Market Value</th>
+        <th class="num">
+          <a class="metric-toggle tip-host" hx-get="{{ pnl_toggle_url }}" hx-target="#equities-table" hx-swap="outerHTML" hx-push-url="true" href="{{ pnl_toggle_url }}">{% if pnl_mode == 'usd' %}PnL ($){% else %}PnL (%){% endif %}<span class="tooltip">Switch between PnL (%) and PnL ($)</span></a>
+          <span class="info-dot">i<span class="tooltip">Profit or loss vs cost basis.</span></span>
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in entries %}
+      {% with holding=entry.holding %}
+      <tr>
+        <td class="sym-cell">
+          <span class="sym-avatar">{{ holding.instrument.code|slice:":1" }}</span>
+          <span class="sym-text">
+            <a class="sym-link" href="https://www.tradingview.com/chart/?symbol={{ holding.instrument.code|urlencode }}" target="_blank" rel="noopener">{{ holding.instrument.code }}</a>
+            {% if entry.quote %}<span class="sym-price">({{ entry.quote.price|money }})</span>{% endif %}
+          </span>
+        </td>
+        <td class="num">{{ holding.shares|floatformat:"0" }}</td>
+        <td class="num">{{ holding.cost_basis|money }}</td>
+        <td class="num">{{ holding.market_value|money }}</td>
+        {% if pnl_mode == 'usd' %}
+        <td class="num {{ holding.pnl|sign_class }}">{{ holding.pnl|money_signed }}</td>
+        {% else %}
+        <td class="num {{ holding.pnl_pct|sign_class }}">{{ holding.pnl_pct|pct2_signed }}</td>
+        {% endif %}
+      </tr>
+      {% endwith %}
+      {% empty %}
+      <tr><td colspan="5" class="empty-row">{% if query %}No equity positions match "{{ query }}".{% else %}No equity positions match the selected filters.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

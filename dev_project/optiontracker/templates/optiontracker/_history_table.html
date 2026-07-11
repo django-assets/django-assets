@@ -1,0 +1,106 @@
+{% load tracker_format %}
+{% if is_htmx %}
+<div class="history-totals" id="history-totals" hx-swap-oob="true">
+  {% if assigned_only %}
+  <div>Total Assignments: <strong>{{ total_assignments }}</strong></div>
+  {% else %}
+  <div>Total Strategies: <strong>{{ total_strategies }}</strong></div>
+  <div>Total Realized PnL: <strong class="{{ stats.total_profit|sign_class }}">{{ stats.total_profit|money_signed }}</strong></div>
+  {% endif %}
+</div>
+<button type="button" id="history-strategy-btn" hx-swap-oob="true" class="btn dropdown-toggle" data-dropdown="history-strategy-menu" {% if assigned_only %}disabled{% endif %}>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></svg>
+  Strategy
+</button>
+{% include "optiontracker/_date_range_button.html" with range_btn_id="history-range-btn" range_menu_id="history-range-menu" range_oob=True %}
+{% endif %}
+<div id="history-table" class="table-wrap">
+  {% if assigned_only %}
+  <table class="data-table" aria-label="Assigned option trades">
+    <thead>
+      <tr>
+        <th>Symbol</th>
+        <th>Shares</th>
+        <th>Strike Price</th>
+        <th>Call / Put</th>
+        <th>Assigned Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in assignments %}
+      <tr>
+        <td class="sym-cell"><span class="sym-text"><span class="sym-link">{{ row.underlying.code }}</span></span></td>
+        <td>{{ row.shares|floatformat:"2" }}</td>
+        <td>{{ row.strike|strike }}</td>
+        <td>{{ row.right|right_label|upper }}</td>
+        <td>{{ row.assigned_on|date:"M j, Y" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="empty-row">No assignments match the selected filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Symbol</th>
+        <th>Type (Contracts)</th>
+        <th>Expiry</th>
+        <th class="sortable th-mixed{% if sort_state.trade_date.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.trade_date.url }}" hx-target="#history-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.trade_date.url }}">Trade Date <span class="sort-arrow">{% if sort_state.trade_date.active %}{% if sort_state.trade_date.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
+        <th class="num">Initial Premium</th>
+        <th class="sortable th-mixed num{% if sort_state.pnl.active %} sorted{% endif %}">
+          <a hx-get="{{ sort_state.pnl.url }}" hx-target="#history-table" hx-swap="outerHTML" hx-push-url="true" href="{{ sort_state.pnl.url }}">Realized PnL <span class="sort-arrow">{% if sort_state.pnl.active %}{% if sort_state.pnl.descending %}&darr;{% else %}&uarr;{% endif %}{% else %}&#8645;{% endif %}</span></a>
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr class="pos-row expandable" tabindex="0">
+        <td class="sym-cell">
+          <svg class="row-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+          <span class="sym-text"><span class="sym-link">{{ row.underlying.code|default:"—" }}</span></span>
+        </td>
+        <td>{{ row.strategy|strategy_label }} ({{ row.contracts }})</td>
+        <td>{{ row.expiration|date:"Y-m-d"|default:"—" }}</td>
+        <td>{{ row.opened_on|date:"m/d/Y" }}-{{ row.closed_on|date:"m/d/Y" }}</td>
+        <td class="num">{{ row.initial_premium|money }}</td>
+        <td class="num {{ row.net_profit|sign_class }}">{{ row.net_profit|money }}</td>
+      </tr>
+      <tr class="detail-row" hidden>
+        <td colspan="6">
+          <div class="detail-panel">
+            <table class="legs-table legs-upper">
+              <thead>
+                <tr><th>Call / Put</th><th>Side</th><th class="num">Strike Price</th><th class="num">Open Price</th><th class="num">Close Price</th><th>Close Status</th><th class="num">Fees</th></tr>
+              </thead>
+              <tbody>
+                {% for leg in row.legs %}
+                <tr>
+                  <td class="lower">{{ leg.right|right_label|lower }}</td>
+                  <td>{{ leg.side|side_label }}</td>
+                  <td class="num">{{ leg.strike|plain_number }}</td>
+                  <td class="num">{{ leg.open_price|money }}</td>
+                  <td class="num">{{ leg.close_price|money }}</td>
+                  <td>{{ leg.status|capfirst }} ({{ leg.contracts|floatformat:"0" }}, {{ leg.closed_on|date:"n/j/Y" }})</td>
+                  <td class="num">{{ leg.fees|money }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" class="empty-row">No closed strategies match the selected filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  <div class="pager">
+    {# Reference parity: a Next button exists but does nothing (all rows render on one page). #}
+    <button type="button" class="btn">Next</button>
+  </div>
+</div>
